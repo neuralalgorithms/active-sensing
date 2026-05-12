@@ -1,0 +1,21 @@
+# Python environment
+.venv/
+__pycache__/
+*.pyc
+.python-version
+
+# Datasets, Weights, and other artifacts
+data/
+weights/
+plots/
+csv-files/
+archive/
+
+# IDE/System Metadata
+.DS_Store
+.vscode/
+.idea/
+
+# Notebooks
+utils/eda.ipynb
+utils/plotting.ipynb
