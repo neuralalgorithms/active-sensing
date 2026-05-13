@@ -19,3 +19,9 @@ archive/
 # Notebooks
 utils/eda.ipynb
 utils/plotting.ipynb
+
+# Commit messages
+COMMIT_EDITMSG
+
+# Job array
+job_array.slurm

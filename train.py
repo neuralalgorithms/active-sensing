@@ -1,5 +1,7 @@
 import torch
+import os
 import models
+import argparse
 from utils.utils import get_dataloaders, save_to_csv
 from utils.masks import StaticMaskedDataset, glimpse_mask
 from torch.utils.data import DataLoader
@@ -8,13 +10,14 @@ from tqdm import tqdm
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f">>> USING DEVICE: {DEVICE}")
+
+# --- CPU OPTIMIZATION ---
+cpus_per_task = int(os.environ.get("SLURM_CPUS_PER_TASK", 1))
+torch.set_num_threads(cpus_per_task)
+print(f">>> TORCH THREADS: {torch.get_num_threads()}")
 MODEL_CLASS = models.ModeratelySmallCNN
 
 # -- EXPERIMENT CONFIG ---
-
-NUM_GLIMPSES: list[int]=[14, 16, 20, 25]
-PATCH_SIZES: list[int]=[3]
-SEEDS: list[int]=[1]
 NUM_EPOCHS: int=20
 BATCH_SIZE: int=32
 LEARNING_RATE: float=0.001
@@ -149,17 +152,26 @@ def train(num_glimpses: int, patch_size: int, loaders: tuple[DataLoader, DataLoa
     return best_val_acc, history
 
 if __name__ == "__main__":
-    results_file = "./results/results_moderatelysmall.csv"
+    parser = argparse.ArgumentParser(description="Train Active Sensing Model")
+    parser.add_argument("--seed", type=int, help="Random seed for the experiment")
+    parser.add_argument("--glimpses", type=int, nargs="+", help="List of glimpse counts to sweep (e.g. 14 16 20 25)")
+    parser.add_argument("--patch_size", type=int, default=3, help="Side length of the square patch")
+    parser.add_argument("--results_file", type=str, default="results_moderatelysmall.csv", help="Filename for CSV results")
+    args = parser.parse_args()
 
-    for patch_size in PATCH_SIZES:
-        for seed in SEEDS:
+    # Determine execution mode
+    seeds = [args.seed] if args.seed is not None else [1]
+    num_glimpses_list = args.glimpses if args.glimpses is not None else [14, 16, 20, 25]
+    patch_sizes = [args.patch_size] 
+
+    for patch_size in patch_sizes:
+        for seed in seeds:
             print(f">>> PATCH SIZE: {patch_size} | SEED: {seed}")
-
             train_loader, val_loader = get_dataloaders(grid_size=GRID_SIZE, batch_size=BATCH_SIZE, seed=seed)
             if train_loader is None:
                 break
 
-            for n in NUM_GLIMPSES:
+            for n in num_glimpses_list:
                 print(f">>> NUMBER OF GLIMPSES: {n}")
                 # wrap *only* val set for static evaluation
                 static_dataset = StaticMaskedDataset(val_loader.dataset, n, patch_size, seed)
@@ -168,7 +180,7 @@ if __name__ == "__main__":
                 # train using base_train_loader (dynamic) and val_loader (static)
                 best_val_acc, history = train(n, patch_size, (train_loader, static_loader))
 
-                # 4. Log results
+                # Log results
                 rows = [{
                     "patch_size": patch_size,
                     "glimpses": n,
@@ -182,7 +194,7 @@ if __name__ == "__main__":
                     "best_val_accuracy": best_val_acc
                 } for i in range(len(history['val_acc']))]
 
-                save_to_csv(results_file, rows)
+                save_to_csv(args.results_file, rows)
 
-    print(f"\nData saved to {results_file}")
+    print(f"\nData saved to {args.results_file}")
 
