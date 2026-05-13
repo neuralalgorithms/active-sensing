@@ -18,11 +18,11 @@ print(f">>> TORCH THREADS: {torch.get_num_threads()}")
 MODEL_CLASS = models.ModeratelySmallCNN
 
 # -- EXPERIMENT CONFIG ---
-NUM_EPOCHS: int=20
+NUM_EPOCHS: int=200
 BATCH_SIZE: int=32
 LEARNING_RATE: float=0.001
 GRID_SIZE: int=77
-EPOCH_COUNTER: int=5
+EPOCH_COUNTER: int=25
 
 # --- TRAIN ---
 
