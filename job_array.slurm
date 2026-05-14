@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=1              # 1 logical thread per process
 #SBATCH --mem=4G                       # Memory for the entire job (shared by tasks)
 #SBATCH --time=02:00:00                
-#SBATCH --array=1-8                    # Array of jobs (e.g., 4 concurrent jobs limit)
+#SBATCH --array=1-4                    # Array of jobs (e.g., 4 concurrent jobs limit)
 #SBATCH --output=logs/array_%A_%a.out
 #SBATCH --error=logs/array_%A_%a.err
 

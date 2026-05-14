@@ -172,9 +172,9 @@ if __name__ == "__main__":
     num_glimpses_list = args.glimpses if args.glimpses is not None else [14, 16, 20, 25]
     patch_sizes = [args.patch_size] 
 
-    # Task ID for filename resolution
-    task_id = os.environ.get("SLURM_ARRAY_TASK_ID", seeds[0])
-    results_file = f"results_seed_{task_id}.csv"
+    # Task ID for filename resolution: prioritize seed for uniqueness in multi-task jobs
+    file_id = args.seed if args.seed is not None else os.environ.get("SLURM_ARRAY_TASK_ID", 1)
+    results_file = f"results_seed_{file_id}.csv"
 
     # Directory resolution logic
     data_dir = args.data_dir or os.environ.get("SLURM_TMPDIR") or os.environ.get("DATASET_ROOT") or "./data"
@@ -213,4 +213,3 @@ if __name__ == "__main__":
                 save_to_csv(output_dir, results_file, rows)
 
     print(f"\nData saved to {os.path.join(output_dir, results_file)}")
-
