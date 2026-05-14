@@ -5,20 +5,12 @@ from torch.utils.data import TensorDataset, DataLoader, random_split
 import os
 import pandas as pd
 from pathlib import Path
-from dotenv import load_dotenv
 
-load_dotenv() # Load env vars from .env if exists
-
-def get_dataloaders(grid_size: int=32, batch_size: int=32, seed: int=42, split: float=0.2) -> tuple[DataLoader, DataLoader]: # you could go further with tuple[DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]]], but there's a limit to how much type hinting one should do! 
+def get_dataloaders(data_dir: str, grid_size: int=32, batch_size: int=32, seed: int=42, split: float=0.2) -> tuple[DataLoader, DataLoader]: # you could go further with tuple[DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]]], but there's a limit to how much type hinting one should do! 
     """
     Creates balanced dataloaders for binary classification of patchy vs. stripy grids.
     """
-
-    # look for SLURM_TMPDIR; if not, look for DATASET_ROOT from .env; if not, create local folder "data"
-    default_data_root = os.getenv("DATASET_ROOT", "data")
-    base_data_dir = os.getenv("SLURM_TMPDIR", default_data_root)
-
-    path = Path(base_data_dir) / f"dataset-{grid_size}-balanced"
+    path = Path(data_dir) / f"dataset-{grid_size}-balanced"
 
     if not path.is_dir():
         raise FileNotFoundError(f"Dataset directory not found: {path.resolve()}")
@@ -54,13 +46,12 @@ def get_dataloaders(grid_size: int=32, batch_size: int=32, seed: int=42, split: 
     return DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers), \
            DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
-def save_to_csv(filename, data):
+def save_to_csv(output_dir, filename, data):
     """
     Saves a list of dictionaries to a CSV. 
     Appends if the file exists, creates it with headers if it doesn't.
     """
-    # look for OUTPUT_DIR from .env; if not, create local folder "output"
-    output_base = Path(os.getenv("OUTPUT_DIR", "./output")) # ./output = output
+    output_base = Path(output_dir)
     full_path = output_base / filename
 
     full_path.parent.mkdir(parents=True, exist_ok=True) # Check if parent directory exists. Analogous to os.makedirs(os.path.dirname(filename), exist_ok=True)

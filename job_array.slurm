@@ -1,46 +1,52 @@
 #!/bin/bash
 #SBATCH --job-name=gp-active-sensing
-#SBATCH --partition=normal             # Target CPU nodes
+#SBATCH --partition=normal             
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4              # for num_workers
-#SBATCH --mem=4G
-#SBATCH --time=01:00:00                
-#SBATCH --array=1-30                   # 30 parallel seeds
+#SBATCH --ntasks=8                     # Number of concurrent tasks per job
+#SBATCH --cpus-per-task=1              # 1 logical thread per process
+#SBATCH --mem=4G                       # Memory for the entire job (shared by tasks)
+#SBATCH --time=02:00:00                
+#SBATCH --array=1-8                    # Array of jobs (e.g., 4 concurrent jobs limit)
 #SBATCH --output=logs/array_%A_%a.out
 #SBATCH --error=logs/array_%A_%a.err
 
-# env initialization
+# Config
+TASKS_PER_JOB=8
+
+# Environment initialization
 source ~/miniforge3/etc/profile.d/conda.sh
 eval "$(mamba shell hook --shell bash)"
 mamba activate torch_gpu
 
-# isolate resources on AMD EPYC nodes
+# Isolate resources per task (Slurm handles this via srun)
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-# define isolated directory in scratch/
+# Define isolated directory in scratch 
 JOB_SCRATCH=~/scratch/active-sensing/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}
-mkdir -p "$JOB_SCRATCH/data"
-mkdir -p "$JOB_SCRATCH/outputs"
+DATA_DIR="$JOB_SCRATCH/data"
+OUTPUT_DIR="$JOB_SCRATCH/outputs"
 
-# map env vars used in Python code
-export SLURM_TMPDIR="$JOB_SCRATCH/data"
-export OUTPUT_DIR="$JOB_SCRATCH/outputs"
+mkdir -p "$DATA_DIR"
+mkdir -p "$OUTPUT_DIR"
 
-# copy in the dataset from work to scratch for fast storage
-cp -r ~/work/active-sensing/data/* "$SLURM_TMPDIR/"
+# Copy dataset once for all tasks in this job
+cp -r ~/work/active-sensing/data/* "$DATA_DIR/"
 
-# execution
-cd "$JOB_SCRATCH"
-python ~/work/active-sensing/train.py \
-    --seed "$SLURM_ARRAY_TASK_ID" \
-    --glimpses 1 2 4 8 10 12 16 20 \
-    --results_file "results_seed_${SLURM_ARRAY_TASK_ID}.csv"
+# Execute job steps: evaluate the unique seed per process using srun
+# SEED calculation: (ArrayID-1)*TasksPerJob + ProcID
+srun --exact -n $TASKS_PER_JOB bash -c "
+    SEED=\$(( (SLURM_ARRAY_TASK_ID - 1) * $TASKS_PER_JOB + SLURM_PROCID ))
+    python ~/work/active-sensing/train.py \\
+        --seed \"\$SEED\" \\
+        --glimpses 1 2 4 8 10 12 16 20 \\
+        --data_dir \"$DATA_DIR\" \\
+        --output_dir \"$OUTPUT_DIR\"
+"
 
-# copy out results from scratch/ to work/
+# Copy out results
 mkdir -p ~/work/active-sensing/results
 cp "$OUTPUT_DIR"/*.csv ~/work/active-sensing/results/
 
-# clean up
+# Clean up
 rm -rf "$JOB_SCRATCH"

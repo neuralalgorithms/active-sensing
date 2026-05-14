@@ -1,0 +1,1 @@
+Removed .env, incorporated its features into the CLI or adjusted for Slurm's automatic assignment for some variables
