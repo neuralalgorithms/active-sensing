@@ -4,6 +4,7 @@ This project investigates **Active Sensing**, the process of identifying texture
 
 ## Methodology
 - **Data Generation** `gp-pipeline.py`: Textures are procedurally generated using Gaussian Processes with specific kernels (Isotropic RBF for 'patchy', Anisotropic RBF for 'stripy' patterns).
+![Stimuli Dataset](dataset_samples_subtitle.png)
 - **Active Sensing** `utils/masks.py`: Models receive 2-channel input: the masked image (revealing only specific patches) and the binary mask itself (indicating what is revealed).
 - **Training** `train.py`: Models are trained using dynamic random masking (new glimpses every batch) and validated using static, deterministic masks to ensure objective and reproducible evaluation across experiments.
 
