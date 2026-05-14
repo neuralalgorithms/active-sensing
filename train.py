@@ -15,7 +15,8 @@ print(f">>> USING DEVICE: {DEVICE}")
 slurm_cpus = os.environ.get("SLURM_CPUS_PER_TASK")
 if slurm_cpus:
     cpus_per_task = int(slurm_cpus)
-    num_workers = cpus_per_task
+    # Use 0 workers if only 1 CPU to avoid context switching overhead
+    num_workers = cpus_per_task if cpus_per_task > 1 else 0
 else:
     cpus_per_task = os.cpu_count() or 1
     num_workers = 0
@@ -162,7 +163,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Active Sensing Model")
     parser.add_argument("--seed", type=int, help="Random seed for the experiment")
     parser.add_argument("--glimpses", type=int, nargs="+", help="List of glimpse counts to sweep (e.g. 14 16 20 25)")
-    parser.add_argument("--patch_size", type=int, default=3, help="Side length of the square patch")
+    parser.add_argument("--patch_size", type=int, default=8, help="Side length of the square patch")
     parser.add_argument("--data_dir", type=str, help="Directory containing the datasets")
     parser.add_argument("--output_dir", type=str, help="Directory to save CSV results")
     args = parser.parse_args()

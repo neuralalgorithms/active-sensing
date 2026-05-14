@@ -2,51 +2,82 @@
 #SBATCH --job-name=gp-active-sensing
 #SBATCH --partition=normal             
 #SBATCH --nodes=1
-#SBATCH --ntasks=8                     # Number of concurrent tasks per job
-#SBATCH --cpus-per-task=1              # 1 logical thread per process
-#SBATCH --mem=4G                       # Memory for the entire job (shared by tasks)
-#SBATCH --time=02:00:00                
-#SBATCH --array=1-4                    # Array of jobs (e.g., 4 concurrent jobs limit)
+#SBATCH --ntasks=16                     
+#SBATCH --cpus-per-task=1              
+#SBATCH --mem=8G                       
+#SBATCH --time=02:30:00                
+#SBATCH --array=0-7%4                    
 #SBATCH --output=logs/array_%A_%a.out
 #SBATCH --error=logs/array_%A_%a.err
 
-# Config
-TASKS_PER_JOB=8
+set -e # Exit immediately if a command exits with a non-zero status
 
-# Environment initialization
+# --- Configuration ---
+DATA_SRC=~/work/active-sensing/data
+SCRIPT_PATH=~/work/active-sensing/train.py
+
+# --- Validation Block ---
+echo ">>> Running Validation for Array Job ID: $SLURM_ARRAY_JOB_ID, Task ID: $SLURM_ARRAY_TASK_ID"
+
+# Ensure critical Slurm variables are present
+if [ -z "$SLURM_ARRAY_TASK_ID" ]; then
+    echo "ERROR: SLURM_ARRAY_TASK_ID is undefined. Ensure this is run via sbatch --array."
+    exit 1
+fi
+
+# Confirm resource allocation alignment
+if [[ "$SLURM_CPUS_PER_TASK" -ne 1 ]]; then
+    echo "WARNING: Unexpected CPU allocation ($SLURM_CPUS_PER_TASK). Performance may degrade."
+fi
+
+if [ ! -f "$SCRIPT_PATH" ]; then
+    echo "ERROR: Training script not found at $SCRIPT_PATH"
+    exit 1
+fi
+
+if [ ! -d "$DATA_SRC" ]; then
+    echo "ERROR: Source data directory $DATA_SRC does not exist."
+    exit 1
+fi
+
+# --- Environment Initialization ---
 source ~/miniforge3/etc/profile.d/conda.sh
 eval "$(mamba shell hook --shell bash)"
 mamba activate torch_gpu
 
-# Isolate resources per task (Slurm handles this via srun)
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-# Define isolated directory in scratch 
+# --- Directory Setup ---
 JOB_SCRATCH=~/scratch/active-sensing/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}
 DATA_DIR="$JOB_SCRATCH/data"
 OUTPUT_DIR="$JOB_SCRATCH/outputs"
 
-mkdir -p "$DATA_DIR"
-mkdir -p "$OUTPUT_DIR"
+mkdir -p "$DATA_DIR" "$OUTPUT_DIR"
 
-# Copy dataset once for all tasks in this job
-cp -r ~/work/active-sensing/data/* "$DATA_DIR/"
+cp -r "$DATA_SRC"/* "$DATA_DIR/"
 
-# Execute job steps: evaluate the unique seed per process using srun
-# SEED calculation: (ArrayID-1)*TasksPerJob + ProcID
-srun --exact -n $TASKS_PER_JOB bash -c "
-    SEED=\$(( (SLURM_ARRAY_TASK_ID - 1) * $TASKS_PER_JOB + SLURM_PROCID ))
-    python ~/work/active-sensing/train.py \\
+# --- Execution ---
+# Note: $TASKS_PER_JOB is interpolated by the main shell
+# SLURM_PROCID and SEED are escaped to be evaluated within srun
+# SLURM_NTASKS is derived automatically from #SBATCH --ntasks
+# SLURM_PROCID is the rank of the process within the current job (0 to SLURM_NTASKS-1)
+srun --exact -n $SLURM_NTASKS bash -c "
+    SEED=\$(( SLURM_ARRAY_TASK_ID * SLURM_NTASKS + SLURM_PROCID ))
+    echo \"[Job $SLURM_ARRAY_TASK_ID | Task \$SLURM_PROCID] Launching seed: \$SEED\"
+    
+    python $SCRIPT_PATH \\
         --seed \"\$SEED\" \\
-        --glimpses 1 2 4 8 10 12 16 20 \\
+        --glimpses 1 2 4 8 10 12 16 20 22 24 26 28 30 \\
+        --patch_size 8 \\
         --data_dir \"$DATA_DIR\" \\
         --output_dir \"$OUTPUT_DIR\"
 "
 
-# Copy out results
+# --- Post-Processing ---
 mkdir -p ~/work/active-sensing/results
 cp "$OUTPUT_DIR"/*.csv ~/work/active-sensing/results/
 
 # Clean up
 rm -rf "$JOB_SCRATCH"
+echo ">>> Job array task $SLURM_ARRAY_TASK_ID completed successfully."
