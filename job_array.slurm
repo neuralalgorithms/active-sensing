@@ -5,8 +5,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4              # for num_workers
 #SBATCH --mem=4G
-#SBATCH --time=02:00:00                
-#SBATCH --array=1-20                   # 20 parallel seeds
+#SBATCH --time=01:00:00                
+#SBATCH --array=1-30                   # 30 parallel seeds
 #SBATCH --output=logs/array_%A_%a.out
 #SBATCH --error=logs/array_%A_%a.err
 

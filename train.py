@@ -175,7 +175,7 @@ if __name__ == "__main__":
                 print(f">>> NUMBER OF GLIMPSES: {n}")
                 # wrap *only* val set for static evaluation
                 static_dataset = StaticMaskedDataset(val_loader.dataset, n, patch_size, seed)
-                static_loader = DataLoader(static_dataset, batch_size=BATCH_SIZE, shuffle=False)
+                static_loader = DataLoader(static_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=cpus_per_task)
 
                 # train using base_train_loader (dynamic) and val_loader (static)
                 best_val_acc, history = train(n, patch_size, (train_loader, static_loader))
