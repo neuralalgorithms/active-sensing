@@ -34,24 +34,33 @@ class StaticMaskedDataset(Dataset):
 
 def glimpse_mask(images: torch.Tensor, n_glimpses: int, patch_size: int) -> torch.Tensor:
     """
-    Applies n random square patches (with replacement).
+    Applies n random square patches (with replacement) via vectorized advanced indexing.
     Args:
         images: (N, C, H, W)
         n_glimpses: number of patches to apply
         patch_size: side length of square patch
     Returns:
-        masked_images, mask
+        masked_images concatenated with mask channel
     """
     N, _, H, W = images.shape
     mask = torch.zeros((N, 1, H, W), device=images.device)
 
+    # Pre-compute coordinate offsets for the patch area
+    batch_idx = torch.arange(N, device=images.device).view(N, 1, 1)
+    dy = torch.arange(patch_size, device=images.device).view(1, patch_size, 1)
+    dx = torch.arange(patch_size, device=images.device).view(1, 1, patch_size)
+
     for _ in range(n_glimpses):
-        # Sample top-left corners uniformly
+        # Sample top-left corners for the entire batch simultaneously
         x = torch.randint(0, W - patch_size + 1, (N,), device=images.device)
         y = torch.randint(0, H - patch_size + 1, (N,), device=images.device)
 
-        for i in range(N):
-            mask[i, 0, y[i]:y[i]+patch_size, x[i]:x[i]+patch_size] = 1.0
+        # Broadcast origins with offsets to construct coordinate grids
+        y_idx = y.view(N, 1, 1) + dy
+        x_idx = x.view(N, 1, 1) + dx
+
+        # Vectorized assignment across the batch
+        mask[batch_idx, 0, y_idx, x_idx] = 1.0
 
     return torch.cat([images * mask, mask], dim=1)
     # Sanity check: try this to return noise and a mask. It should just fail of course.

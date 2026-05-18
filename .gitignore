@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 .python-version
+.geminiignore
 
 # Datasets, Weights, and other artifacts
 data/
