@@ -70,6 +70,15 @@ Each job corresponds to a seed and sweeps through the specified glimpse counts.
 
 On HPC, results are logged to the `results/` directory as CSV files. If local, they are logged to root with filename specifiable by results_file.
 
+## Baseline Results
+Model performance across different numbers of glimpses and the corresponding theoretical coverage:
+
+<p align="center">
+    <img src="plots/7-graph.png" alt="Results Graph" width="800">
+    <br>
+    <em>Figure 2: Validation accuracy and loss versus glimpse count and coverage.</em>
+</p>
+
 ## Non-research ideas
 - A config file as number of CLI options grow: model, epochs, epoch counter, training rate...
 - If defining new ways to train,an extensible, modular training class would reduce duplicate code.
