@@ -74,7 +74,7 @@ On HPC, results are logged to the `results/` directory as CSV files. If local, t
 Model performance across different numbers of glimpses and the corresponding theoretical coverage:
 
 <p align="center">
-    <img src="plots/7-graph.png" alt="Results Graph" width="800">
+    <img src="7-graph.png" alt="Results Graph" width="800">
     <br>
     <em>Figure 2: Validation accuracy and loss versus glimpse count and coverage.</em>
 </p>
