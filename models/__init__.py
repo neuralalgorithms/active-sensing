@@ -9,6 +9,8 @@ from .cnn import (
     SuperSmallCNN, # noqa: F401
     ModeratelySmallCNN # noqa: F401
 )
+from .ram_modern import RecurrentAttentionModelModern # noqa: F401
+from .ram_classic import RecurrentAttentionModelClassic # noqa: F401
 
 # previous code
 """

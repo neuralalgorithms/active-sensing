@@ -95,3 +95,34 @@ def compute_expected_reveal(H: int = 32, W: int = 32, n_glimpses: int = 10, patc
 #E_x = compute_expected_reveal(n_glimpses=350, patch_size=8)
 #print(f"Empirical E[X(10)]: {E_x:.4f}")
 # Result for (32, 32, 8, 10) is 0.4418
+
+def extract_patch(images: torch.Tensor, locations: torch.Tensor, patch_size: int) -> torch.Tensor:
+    """
+    Extracts a single fixed-size patch per image at the specified location.
+    Non-differentiable (hard crop via integer indexing). Intended for use with REINFORCE,
+    where gradients flow through the policy log-prob rather than the crop operation.
+
+    Args:
+        images:    (N, C, H, W) — raw, unmasked images.
+        locations: (N, 2)       — (x, y) coordinates in [-1, 1] normalized space.
+        patch_size: int         — side length of the square patch to extract.
+    Returns:
+        patches: (N, C, patch_size, patch_size)
+    """
+    N, C, H, W = images.shape
+
+    # Unnormalize from [-1, 1] to valid top-left pixel indices
+    # Clamp to ensure the full patch stays in-bounds
+    loc = locations.detach()
+    x_norm = loc[:, 0]  # (N,)
+    y_norm = loc[:, 1]  # (N,)
+
+    x0 = ((x_norm + 1.0) / 2.0 * (W - patch_size)).long().clamp(0, W - patch_size)
+    y0 = ((y_norm + 1.0) / 2.0 * (H - patch_size)).long().clamp(0, H - patch_size)
+
+    patches = []
+    for i in range(N):
+        patch = images[i, :, y0[i]:y0[i] + patch_size, x0[i]:x0[i] + patch_size]
+        patches.append(patch)
+
+    return torch.stack(patches, dim=0)  # (N, C, patch_size, patch_size)
