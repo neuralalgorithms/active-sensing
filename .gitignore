@@ -27,3 +27,4 @@ COMMIT_EDITMSG
 # Local reference file
 info.md
 refs
+config.yaml
