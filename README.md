@@ -5,7 +5,7 @@ This project investigates **Active Sensing**, the process of identifying texture
 ## Methodology
 - **Data Generation** `gp-pipeline.py`: Textures are procedurally generated using Gaussian Processes with specific kernels (Isotropic RBF for 'patchy', Anisotropic RBF for 'stripy' patterns).
 <p align="center">
-    <img src="dataset_samples_subtitle.png" alt="Stimuli Dataset" width="600">
+    <img src="assets/dataset_samples_subtitle.png" alt="Stimuli Dataset" width="600">
     <br>
     <em>Figure 1: Sample stimuli generated via Gaussian Processes (Patchy,
          Horizontal, and Vertical).</em>
@@ -74,7 +74,7 @@ On HPC, results are logged to the `results/` directory as CSV files. If local, t
 Model performance across different numbers of glimpses and the corresponding theoretical coverage:
 
 <p align="center">
-    <img src="7-graph.png" alt="Results Graph" width="800">
+    <img src="assets/7-graph.png" alt="Results Graph" width="800">
     <br>
     <em>Figure 2: Validation accuracy and loss versus glimpse count and coverage.</em>
 </p>
