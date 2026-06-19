@@ -67,6 +67,7 @@ numpy==2.4.2
     #   contourpy
     #   gp
     #   matplotlib
+    #   pandas
     #   scikit-learn
     #   scipy
     #   torchvision
@@ -74,6 +75,8 @@ packaging==26.0
     # via
     #   ipykernel
     #   matplotlib
+pandas==3.0.3
+    # via gp
 parso==0.8.6
     # via jedi
 pexpect==4.9.0 ; sys_platform != 'emscripten' and sys_platform != 'win32'
@@ -104,6 +107,7 @@ python-dateutil==2.9.0.post0
     # via
     #   jupyter-client
     #   matplotlib
+    #   pandas
 python-dotenv==1.2.2
     # via gp
 pyzmq==27.1.0
@@ -153,5 +157,7 @@ traitlets==5.14.3
     #   matplotlib-inline
 typing-extensions==4.15.0
     # via torch
+tzdata==2026.2 ; sys_platform == 'emscripten' or sys_platform == 'win32'
+    # via pandas
 wcwidth==0.6.0
     # via prompt-toolkit

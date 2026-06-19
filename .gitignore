@@ -23,3 +23,7 @@ utils/plotting.ipynb
 
 # Commit messages
 COMMIT_EDITMSG
+
+# Local reference file
+info.md
+refs
