@@ -97,6 +97,31 @@ def save_weights_safetensors(
     path.parent.mkdir(parents=True, exist_ok=True)
     save_file(model.state_dict(), path, metadata=metadata)
 
+
+def load_weights_safetensors(model: torch.nn.Module, path: str | Path) -> bool:
+    """Load a safetensors state dict into ``model`` using strict key matching.
+
+    Returns ``True`` when the weights are loaded successfully. Missing files,
+    invalid safetensors files, and incompatible model state dicts return
+    ``False`` after printing a concise diagnostic.
+    """
+    from safetensors import SafetensorError
+    from safetensors.torch import load_file
+
+    path = Path(path)
+    if not path.is_file():
+        print(f"Error: No safetensors weights found at {path}.")
+        return False
+
+    try:
+        state_dict = load_file(str(path))
+        model.load_state_dict(state_dict, strict=True)
+    except (OSError, RuntimeError, ValueError, SafetensorError) as error:
+        print(f"Error: Could not load safetensors weights from {path}: {error}")
+        return False
+
+    return True
+
 # --- LEGACY CODE ---
 
 def get_dataloaders_unbalanced(batch_size=32, seed=42):
