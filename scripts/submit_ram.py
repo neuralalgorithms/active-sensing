@@ -12,8 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # ---- Control panel: configure today's run here. ----
-MODEL = "policy"                         # "policy" or "random"
-SEED_COUNT = 8                            # Seeds are 0 through SEED_COUNT - 1
+MODEL = "random"                         # "policy" or "random"
+SEED_COUNT = 64                            # Seeds are 0 through SEED_COUNT - 1
 GLIMPSES = (1,2,3,4,5,6,7)
 PATCH_SIZE = 8
 WORKERS_PER_ARRAY_TASK = 8
@@ -23,7 +23,8 @@ MEMORY_PER_ARRAY_TASK = "8G"		 # --mem
 WALL_TIME = "01:00:00"
 PARTITION = "normal"
 RESULTS_ROOT = Path.home() / "work" / "active-sensing" / "results"
-DRY_RUN = False                           # If True, print mapping only; do not call Slurm.
+DRY_RUN = True                           # If True, print mapping only; do not call Slurm
+VERBOSE_DRY_RUN = False                  # If True, print line-by-line task mapping during dry run
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPTS_DIR.parent
@@ -113,11 +114,27 @@ def print_mapping(total_models: int, array_elements: int, array_spec: str, idle_
     print(f"CPUs per worker: {CPUS_PER_WORKER}")
     print(f"Maximum active elements: {MAX_ACTIVE_ARRAY_TASKS}")
     print(f"Idle tail slots: {idle_slots}")
-    print("Task mapping (glimpse-major):")
-    for global_index in range(total_models):
-        task_id, slot = divmod(global_index, WORKERS_PER_ARRAY_TASK)
-        glimpse_index, seed = divmod(global_index, SEED_COUNT)
-        print(f"  task={task_id} slot={slot} global_index={global_index} glimpse={GLIMPSES[glimpse_index]} seed={seed}")
+
+    print("\nDistribution Summary:")
+    print(f"{'Array Tasks':<12} | {'Glimpse':<7} | {'Seeds':<10} | {'Models':<6}")
+    print("-" * 44)
+    for i, glimpse in enumerate(GLIMPSES):
+        start_idx = i * SEED_COUNT
+        end_idx = start_idx + SEED_COUNT - 1
+        start_task = start_idx // WORKERS_PER_ARRAY_TASK
+        end_task = end_idx // WORKERS_PER_ARRAY_TASK
+        
+        task_str = f"{start_task}..{end_task}" if start_task != end_task else str(start_task)
+        seed_str = f"0..{SEED_COUNT - 1}"
+        
+        print(f"{task_str:<12} | {glimpse:<7} | {seed_str:<10} | {SEED_COUNT:<6}")
+
+    if VERBOSE_DRY_RUN:
+        print("\nTask mapping (glimpse-major):")
+        for global_index in range(total_models):
+            task_id, slot = divmod(global_index, WORKERS_PER_ARRAY_TASK)
+            glimpse_index, seed = divmod(global_index, SEED_COUNT)
+            print(f"  task={task_id} slot={slot} global_index={global_index} glimpse={GLIMPSES[glimpse_index]} seed={seed}")
 
 
 def submission_payload(array_job_id: str, total_models: int, array_elements: int, array_spec: str, idle_slots: int) -> dict:

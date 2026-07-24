@@ -16,12 +16,32 @@ Edit the control panel variables at the top of the script, then run:
 - `MAX_ACTIVE_ARRAY_TASKS`: Maximum concurrently running Slurm array tasks.
 - `RESULTS_ROOT`: Base directory for experiment outputs and logs.
 - `DRY_RUN`: Set to `True` to view exact task mapping and configurations without launching jobs.
+- `VERBOSE_DRY_RUN`: Set to `True` (when `DRY_RUN = True`) to print the line-by-line task-to-worker mapping.
 - **Slurm Configs:** Configure resource limits via `WALL_TIME`, `MEMORY_PER_ARRAY_TASK`, and `PARTITION`.
 
 **Array Packing Calculation:**
 - Total models: `SEED_COUNT * len(GLIMPSES)`
-- Array bounds: `--array=0-{ceil(Total / WORKERS_PER_ARRAY_TASK) - 1}%MAX_ACTIVE_ARRAY_TASKS`
+- Array task count: `ceil(Total / WORKERS_PER_ARRAY_TASK)`
+- Array bounds: `--array=0-{Array task count - 1}%MAX_ACTIVE_ARRAY_TASKS`
 - Internal `global_idx`: `SLURM_ARRAY_TASK_ID * WORKERS_PER_ARRAY_TASK + slot`
+- **Tail Slot Handling:** Unused tail slots in the final array task do not waste compute; worker ranks beyond the total model count safely exit immediately with status 0.
+
+**Dry Run Mode:**
+If you set `DRY_RUN = True` in the control panel and run `python3 submit_ram.py`, the script outputs metadata details and a summary table mapping the array tasks to glimpse/seed configurations without submitting jobs to Slurm:
+
+```text
+Distribution Summary:
+Array Tasks  | Glimpse | Seeds      | Models
+--------------------------------------------
+0..7         | 1       | 0..63      | 64    
+8..15        | 2       | 0..63      | 64    
+16..23       | 3       | 0..63      | 64    
+...
+```
+
+- **Run Metadata Summary:** Prints total models, array task count, Slurm `--array` specification, workers per task, CPUs per worker, and idle tail slot count.
+- **Detailed Task Mapping:** By default, the full line-by-line mapping list is hidden to keep the output concise. Set `VERBOSE_DRY_RUN = True` to output the detailed breakdown showing `task`, `slot`, `global_index`, `glimpse`, and `seed` for every model.
+
 
 **Tips**
 - **Single Model Type Per Run:** A single execution of `submit_ram.py` can evaluate multiple seeds and glimpse counts, but only supports 1 model type at a time (`MODEL = "policy"` or `MODEL = "random"`).
@@ -31,15 +51,13 @@ Edit the control panel variables at the top of the script, then run:
 After your job has finished, cd into the directory in results/month, and run:
 `python3 -m json.tool "manifest.json"`
 You should see manifest.status == "complete". This guarantees:
-  - Every expected (glimpse, seed) worker wrote a successful .status file with exit code 0.
-  - No expected workers are missing, failed, or unexpected.
-  - Every requested glimpse condition was published.
-  - Each condition contains exactly the expected seed set (0 through SEED_COUNT - 1).
-  - Source CSVs passed the collector’s identity checks: model type, patch size, glimpse,
-    seed, and staging-directory label agree.
-  - No duplicate (model_type, patch_size, glimpses, seed, epoch) rows were found.
-  - Final condition files and both log archives were successfully published before
-    manifest.json.
+- Every expected (glimpse, seed) worker wrote a successful .status file with exit code 0.
+- No expected workers are missing, failed, or unexpected.
+- Every requested glimpse condition was published.
+- Each condition contains exactly the expected seed set (0 through SEED_COUNT - 1).
+- Source CSVs passed the collector’s identity checks: model type, patch size, glimpse, seed, and staging-directory label agree.
+- No duplicate (model_type, patch_size, glimpses, seed, epoch) rows were found.
+- Final condition files and both log archives were successfully published before manifest.json.
 
 `python3 -c 'import pandas as pd; import sys; print(pd.read_csv(sys.argv[1]) ["seed"].unique())' "pxx_gxx.csv.gz"`
 This reports how which seeds are contained in the combined CSV. Repeat for each of the outputted csv.gz.
