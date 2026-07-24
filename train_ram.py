@@ -33,7 +33,7 @@ EPOCH_COUNTER: int=25
 
 # --- TRAIN ---
 
-def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple) -> tuple:
+def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random_baseline: bool = False) -> tuple:
     """
     Executes training loop with REINFORCE and dynamic masking.
     Returns:
@@ -84,7 +84,7 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple) -> tup
             images, targets = images.to(DEVICE), targets.to(DEVICE)
             optimizer.zero_grad()
 
-            logits, log_pis, baselines, locations = model(images, num_glimpses, patch_size)
+            logits, log_pis, baselines, locations = model(images, num_glimpses, patch_size, random_baseline=random_baseline)
             
             # 1. Classification loss
             bce_loss = criterion(logits, targets)
@@ -96,24 +96,27 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple) -> tup
             # We reshape targets and preds to match so we can squeeze to get a 1D tensor
             rewards = (preds == targets).float().squeeze(-1) # (N,)
             
-            # Compute policy loss and baseline loss
-            policy_loss = 0.0
-            baseline_loss = 0.0
-            
-            for log_pi, b_t in zip(log_pis, baselines):
-                # Baseline loss: MSE between predicted baseline and actual reward
-                baseline_loss += mse_criterion(b_t, rewards).mean()
+            if not random_baseline:
+                # Compute policy loss and baseline loss
+                policy_loss = 0.0
+                baseline_loss = 0.0
                 
-                # Policy loss: -log_pi * (R - b_t)
-                # b_t must be detached so gradients don't flow back through baseline net from policy loss
-                advantage = rewards - b_t.detach()
-                policy_loss += (-log_pi * advantage).mean()
-            
-            # Average over glimpses
-            policy_loss = policy_loss / num_glimpses
-            baseline_loss = baseline_loss / num_glimpses
-            
-            loss = bce_loss + policy_loss + baseline_loss
+                for log_pi, b_t in zip(log_pis, baselines):
+                    # Baseline loss: MSE between predicted baseline and actual reward
+                    baseline_loss += mse_criterion(b_t, rewards).mean()
+                    
+                    # Policy loss: -log_pi * (R - b_t)
+                    # b_t must be detached so gradients don't flow back through baseline net from policy loss
+                    advantage = rewards - b_t.detach()
+                    policy_loss += (-log_pi * advantage).mean()
+                
+                # Average over glimpses
+                policy_loss = policy_loss / num_glimpses
+                baseline_loss = baseline_loss / num_glimpses
+                
+                loss = bce_loss + policy_loss + baseline_loss
+            else:
+                loss = bce_loss
             loss.backward()
             optimizer.step()
 
@@ -133,26 +136,29 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple) -> tup
             for images, targets in val_loader:
                 images, targets = images.to(DEVICE), targets.to(DEVICE)
                 
-                logits, log_pis, baselines, locations = model(images, num_glimpses, patch_size)
+                logits, log_pis, baselines, locations = model(images, num_glimpses, patch_size, random_baseline=random_baseline)
                 
                 bce_loss = criterion(logits, targets)
                 
                 preds = (torch.sigmoid(logits) > 0.5).float()
                 rewards = (preds == targets).float().squeeze(-1)
                 
-                policy_loss = 0.0
-                baseline_loss = 0.0
-                
-                # Note: during eval, log_pi is 0, so policy_loss is 0, but we can compute it for logging parity
-                for log_pi, b_t in zip(log_pis, baselines):
-                    baseline_loss += mse_criterion(b_t, rewards).mean()
-                    advantage = rewards - b_t.detach()
-                    policy_loss += (-log_pi * advantage).mean()
+                if not random_baseline:
+                    policy_loss = 0.0
+                    baseline_loss = 0.0
                     
-                policy_loss = policy_loss / num_glimpses
-                baseline_loss = baseline_loss / num_glimpses
-                
-                loss = bce_loss + policy_loss + baseline_loss
+                    # Note: during eval, log_pi is 0, so policy_loss is 0, but we can compute it for logging parity
+                    for log_pi, b_t in zip(log_pis, baselines):
+                        baseline_loss += mse_criterion(b_t, rewards).mean()
+                        advantage = rewards - b_t.detach()
+                        policy_loss += (-log_pi * advantage).mean()
+                        
+                    policy_loss = policy_loss / num_glimpses
+                    baseline_loss = baseline_loss / num_glimpses
+                    
+                    loss = bce_loss + policy_loss + baseline_loss
+                else:
+                    loss = bce_loss
                 
                 running_val_loss += loss.item()
                 val_correct += (preds == targets).sum().item()
@@ -217,6 +223,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, help="Directory to save CSV results")
     parser.add_argument("--std", type=float, default=0.1, help="Standard deviation for location policy")
     parser.add_argument("--baseline_lr", type=float, default=0.001, help="Learning rate for baseline network (not currently used separately)")
+    parser.add_argument("--random_baseline", action="store_true", help="Use uniform random glimpse locations instead of the learned policy")
     args = parser.parse_args()
 
     # Determine execution mode
@@ -226,7 +233,8 @@ if __name__ == "__main__":
 
     # Task ID for filename resolution
     file_id = args.seed if args.seed is not None else os.environ.get("SLURM_ARRAY_TASK_ID", 1)
-    results_file = f"results_ram_seed_{file_id}.csv"
+    model_tag = "random" if args.random_baseline else "policy"
+    results_file = f"results_ram_{model_tag}_seed_{file_id}.csv"
 
     # Directory resolution logic
     data_dir = args.data_dir or os.environ.get("SLURM_TMPDIR") or os.environ.get("DATASET_ROOT") or "./data"
@@ -245,13 +253,14 @@ if __name__ == "__main__":
                 # Unlike train.py, we don't wrap val_loader in StaticMaskedDataset
                 # because the model determines its own sequence of glimpses dynamically.
                 
-                best_val_acc, history = train(n, patch_size, args.std, (train_loader, val_loader))
+                best_val_acc, history = train(n, patch_size, args.std, (train_loader, val_loader), random_baseline=args.random_baseline)
 
                 # Log results
                 rows = [{
                     "patch_size": patch_size,
                     "glimpses": n,
                     "seed": seed,
+                    "model_type": model_tag,
                     "epoch": i + 1,
                     "val_accuracy": history['val_acc'][i],
                     "train_accuracy": history['train_acc'][i],

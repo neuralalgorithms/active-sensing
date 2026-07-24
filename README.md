@@ -70,6 +70,8 @@ The project is optimized for high-core-count CPU nodes (e.g., Juno's AMD EPYC).
 
 Each job corresponds to a seed and sweeps through the specified glimpse counts. 
 
+For recurrent attention models (RAM) workflows, please refer to the [RAM Job Submission Guide](scripts/RAM_GUIDE.md).
+
 On HPC, results are logged to the `results/` directory as CSV files. If local, they are logged to root with filename specifiable by results_file.
 
 ## Baseline Results

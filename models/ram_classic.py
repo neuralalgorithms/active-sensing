@@ -110,6 +110,7 @@ class RecurrentAttentionModelClassic(nn.Module):
         images:       torch.Tensor,
         num_glimpses: int,
         patch_size:   int,
+        random_baseline: bool = False,
     ) -> tuple[torch.Tensor, list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]:
         from utils.masks import extract_patch
 
@@ -124,12 +125,19 @@ class RecurrentAttentionModelClassic(nn.Module):
         locations: list[torch.Tensor] = []
 
         for _ in range(num_glimpses):
+            if random_baseline:
+                loc = torch.empty(N, 2, device=device).uniform_(-1.0, 1.0)
+
             patches = extract_patch(images, loc, patch_size)
             g_t = self.glimpse_net(patches, loc)
             h_t = self.core_rnn(g_t, h_t)
 
-            loc, log_pi = self.location_net(h_t)
-            b_t         = self.baseline_net(h_t)
+            if not random_baseline:
+                loc, log_pi = self.location_net(h_t)
+                b_t         = self.baseline_net(h_t)
+            else:
+                log_pi = torch.zeros(N, device=device)
+                b_t    = torch.zeros(N, device=device)
 
             log_pis.append(log_pi)
             baselines.append(b_t)

@@ -28,3 +28,14 @@ COMMIT_EDITMSG
 info.md
 refs
 config.yaml
+
+# Logs & Test Results
+scripts/logs/
+logs/
+results/
+tests/
+test_results/
+*.orig
+scripts/test_parallel_ram.slurm
+scripts/test_single_ram.slurm
+RAM_baseline_context.md
