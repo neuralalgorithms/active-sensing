@@ -78,6 +78,25 @@ def save_weights(model, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     torch.save(model.state_dict(), path)
 
+def save_weights_safetensors(
+    model: torch.nn.Module,
+    path: str | Path,
+    metadata: dict[str, str] | None = None,
+) -> None:
+    """Save model weights in safetensors format with optional metadata.
+
+    Args:
+        model: The PyTorch model whose state_dict to save.
+        path: Destination file path (should end in .safetensors).
+        metadata: Optional dict of string key-value pairs to embed
+                  in the safetensors file header.
+    """
+    from safetensors.torch import save_file
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    save_file(model.state_dict(), path, metadata=metadata)
+
 # --- LEGACY CODE ---
 
 def get_dataloaders_unbalanced(batch_size=32, seed=42):

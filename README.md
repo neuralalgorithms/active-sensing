@@ -86,7 +86,7 @@ Model performance across different numbers of glimpses and the corresponding the
 ## Non-research ideas
 - A config file as number of CLI options grow: model, epochs, epoch counter, training rate...
 - If defining new ways to train,an extensible, modular training class would reduce duplicate code.
-- Checkpointing to save/load model weights during training (resuming from last epoch in case of fail)
+- ~~Checkpointing to save/load model weights during training~~ → Weights are now saved in safetensors format after training completes. Mid-training checkpointing for resume-on-failure is a future extension.
 
 ## Contributing
 - *To add a new model*: Define it in a file within `models/` (e.g., `models/rnn.py`), import it into `models/__init__.py`, and select it in `scripts/train.py`.

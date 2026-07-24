@@ -2,7 +2,7 @@ import torch
 import os
 import argparse
 import models
-from utils.utils import get_dataloaders, save_to_csv
+from utils.utils import get_dataloaders, save_to_csv, save_weights_safetensors
 from tqdm import tqdm
 from sklearn.metrics import f1_score
 
@@ -37,6 +37,7 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
     """
     Executes training loop with REINFORCE and dynamic masking.
     Returns:
+        model (nn.Module): The trained model.
         best_val_acc (float): Best validation accuracy.
         history (dict): Dictionary containing epoch-wise metrics.
     """
@@ -212,7 +213,7 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
             interval_val_accs, interval_train_accs = [], []
             interval_val_losses, interval_train_losses = [], []
 
-    return best_val_acc, history
+    return model, best_val_acc, history
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train RAM Model")
@@ -253,7 +254,25 @@ if __name__ == "__main__":
                 # Unlike train.py, we don't wrap val_loader in StaticMaskedDataset
                 # because the model determines its own sequence of glimpses dynamically.
                 
-                best_val_acc, history = train(n, patch_size, args.std, (train_loader, val_loader), random_baseline=args.random_baseline)
+                model, best_val_acc, history = train(n, patch_size, args.std, (train_loader, val_loader), random_baseline=args.random_baseline)
+
+                # Save trained weights in safetensors format
+                weight_metadata = {
+                    "model_class": model.__class__.__name__,
+                    "model_type": model_tag,
+                    "patch_size": str(patch_size),
+                    "num_glimpses": str(n),
+                    "seed": str(seed),
+                    "std": str(args.std),
+                    "num_epochs": str(NUM_EPOCHS),
+                    "best_val_accuracy": f"{best_val_acc:.2f}",
+                    "format": "pytorch",
+                }
+                save_weights_safetensors(
+                    model,
+                    os.path.join(output_dir, "model.safetensors"),
+                    metadata=weight_metadata,
+                )
 
                 # Log results
                 rows = [{

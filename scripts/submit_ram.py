@@ -14,12 +14,12 @@ from pathlib import Path
 # ---- Control panel: configure today's run here. ----
 MODEL = "policy"                         # "policy" or "random"
 SEED_COUNT = 8                            # Seeds are 0 through SEED_COUNT - 1
-GLIMPSES = (7,)
+GLIMPSES = (1,2,3,4,5,6,7)
 PATCH_SIZE = 8
 WORKERS_PER_ARRAY_TASK = 8
 CPUS_PER_WORKER = 2
-MAX_ACTIVE_ARRAY_TASKS = 1
-MEMORY_PER_ARRAY_TASK = "16G"		 # --mem
+MAX_ACTIVE_ARRAY_TASKS = 4
+MEMORY_PER_ARRAY_TASK = "8G"		 # --mem
 WALL_TIME = "01:00:00"
 PARTITION = "normal"
 RESULTS_ROOT = Path.home() / "work" / "active-sensing" / "results"

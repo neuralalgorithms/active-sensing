@@ -182,6 +182,77 @@ def publish_conditions(
     return published
 
 
+def publish_weights(
+    run_directory: Path,
+    parts_directory: Path,
+    submission: dict,
+    collector_id: str,
+) -> tuple[dict[str, dict], list[dict]]:
+    """Copy .safetensors files from staging into the run directory.
+
+    Returns:
+        published: dict mapping published filename to artifact details.
+        errors: list of error dicts for invalid weight files.
+    """
+    published: dict[str, dict] = {}
+    errors: list[dict] = []
+    configuration = submission["configuration"]
+    expected_model = submission["model"]["type"]
+    expected_patch = int(configuration["patch_size"])
+    expected_glimpses = {int(v) for v in configuration["glimpses"]}
+    expected_seeds = set(range(int(configuration["seed_count"])))
+
+    if not parts_directory.is_dir():
+        return published, errors
+
+    for weight_path in sorted(parts_directory.rglob("*.safetensors")):
+        try:
+            # Derive worker label from the staging directory structure
+            staged_worker = weight_path.relative_to(parts_directory).parts[0]
+
+            # Validate embedded metadata if safetensors is available
+            try:
+                from safetensors import safe_open
+                with safe_open(weight_path, framework="pt") as f:
+                    meta = f.metadata() or {}
+                file_model = meta.get("model_type", "")
+                file_patch = meta.get("patch_size", "")
+                file_glimpse = meta.get("num_glimpses", "")
+                file_seed = meta.get("seed", "")
+                if file_model and file_model != expected_model:
+                    raise ValueError(
+                        f"model_type '{file_model}' != expected '{expected_model}'"
+                    )
+                if file_patch and int(file_patch) != expected_patch:
+                    raise ValueError(
+                        f"patch_size {file_patch} != expected {expected_patch}"
+                    )
+                if file_glimpse and int(file_glimpse) not in expected_glimpses:
+                    raise ValueError(
+                        f"num_glimpses {file_glimpse} not in expected {expected_glimpses}"
+                    )
+                if file_seed and int(file_seed) not in expected_seeds:
+                    raise ValueError(
+                        f"seed {file_seed} not in expected {expected_seeds}"
+                    )
+            except ImportError:
+                pass  # safetensors not installed on collector node; skip validation
+
+            # Publish: copy to run directory with worker label as filename
+            destination_name = f"{staged_worker}.safetensors"
+            destination = run_directory / destination_name
+            temporary = destination.with_name(
+                f".{destination_name}.tmp.{collector_id}"
+            )
+            shutil.copy2(weight_path, temporary)
+            os.replace(temporary, destination)
+            published[destination_name] = artifact_details(destination)
+        except Exception as error:
+            errors.append({"path": str(weight_path), "error": str(error)})
+
+    return published, errors
+
+
 def atomic_archive(
     destination: Path,
     members: Iterable[tuple[Path, str]],
@@ -302,6 +373,11 @@ def main() -> int:
         groups, invalid_sources = collect_frames(staging_directory / "parts", submission)
         published = publish_conditions(run_directory, groups, invalid_sources, collector_id)
 
+        weight_results, weight_errors = publish_weights(
+            run_directory, staging_directory / "parts", submission, collector_id,
+        )
+        invalid_sources.extend(weight_errors)
+
         worker_archive = run_directory / "worker-logs.tar.gz"
         worker_archive_details = atomic_archive(
             worker_archive,
@@ -395,6 +471,7 @@ def main() -> int:
         },
         "coverage": coverage,
         "results": published,
+        "weights": weight_results,
         "artifacts": {
             "slurm-logs.tar.gz": slurm_archive_details,
             "worker-logs.tar.gz": worker_archive_details,
