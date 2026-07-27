@@ -6,7 +6,7 @@ import os
 import pandas as pd
 from pathlib import Path
 
-def get_dataloaders(data_dir: str, grid_size: int=32, batch_size: int=32, seed: int=42, split: float=0.2) -> tuple[DataLoader, DataLoader]: # you could go further with tuple[DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]]], but there's a limit to how much type hinting one should do! 
+def get_dataloaders(data_dir: str, grid_size: int=32, batch_size: int=32, seed: int=42, split: float=0.2, num_workers: int=0) -> tuple[DataLoader, DataLoader]: # you could go further with tuple[DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]]], but there's a limit to how much type hinting one should do! 
     """
     Creates balanced dataloaders for binary classification of patchy vs. stripy grids.
     """
@@ -37,7 +37,7 @@ def get_dataloaders(data_dir: str, grid_size: int=32, batch_size: int=32, seed: 
     train_len = int((1 - split) * len(dataset))
     test_len = len(dataset) - train_len
 
-    num_workers = int(os.getenv("SLURM_CPUS_PER_TASK", 0)) # use multiple CPUs if available
+    # num_workers = int(os.getenv("SLURM_CPUS_PER_TASK", 0)) # use multiple CPUs if available
 
     train_ds, test_ds = random_split(
         dataset, [train_len, test_len], generator=torch.Generator().manual_seed(seed)

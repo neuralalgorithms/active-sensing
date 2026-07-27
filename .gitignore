@@ -40,3 +40,16 @@ scripts/test_parallel_ram.slurm
 scripts/test_single_ram.slurm
 RAM_baseline_context.md
 mutagen.yml*
+
+
+AGENTS.md
+
+RAM_debug_analysis.md
+RAM_debugging.md
+RAM_fix_plan.md
+learn_ram.ipynb
+models/ram_classic_v0.py
+run_ram.sh
+test_ram.py
+test_ramm.py
+train_ram_old.py
