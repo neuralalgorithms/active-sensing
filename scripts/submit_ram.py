@@ -12,12 +12,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # ---- Control panel: configure today's run here. ----
-MODEL = "policy"                         # "policy" or "random"
+MODEL = "random"                         # "policy" or "random"
 SEED_COUNT = 4                            # Seeds are 0 through SEED_COUNT - 1
 GLIMPSES = (1,2,4,7)
 PATCH_SIZE = 8
+NOTE = ""                                 # Optional description/note for this run in manifest
 WORKERS_PER_ARRAY_TASK = 8
-CPUS_PER_WORKER = 1
+CPUS_PER_WORKER = 2
 MAX_ACTIVE_ARRAY_TASKS = 2
 MEMORY_PER_ARRAY_TASK = "8G"		 # --mem
 WALL_TIME = "01:00:00"
@@ -105,6 +106,8 @@ def derive_array() -> tuple[int, int, str, int]:
 
 def print_mapping(total_models: int, array_elements: int, array_spec: str, idle_slots: int) -> None:
     print(f"Model: {MODEL}")
+    if NOTE:
+        print(f"Note: {NOTE}")
     print(f"Seeds: 0-{SEED_COUNT - 1} ({SEED_COUNT} seeds)")
     print(f"Glimpses: {','.join(map(str, GLIMPSES))} ({len(GLIMPSES)} values)")
     print(f"Total models: {total_models}")
@@ -141,6 +144,7 @@ def submission_payload(array_job_id: str, total_models: int, array_elements: int
     return {
         "schema_version": 3,
         "submitted_at": datetime.now(timezone.utc).isoformat(),
+        "note": NOTE,
         "experiment": f"ram-{MODEL}",
         "model": {"type": MODEL, "class": "RecurrentAttentionModelClassic", "random_baseline": MODEL == "random"},
         "configuration": {

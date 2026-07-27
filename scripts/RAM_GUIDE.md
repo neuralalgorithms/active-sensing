@@ -11,6 +11,7 @@ Edit the control panel variables at the top of the script, then run:
 - `SEED_COUNT`: Number of random seeds to evaluate per condition.
 - `GLIMPSES`: Tuple of glimpse sequence lengths (e.g., `(1, 2, 3, 4, 5, 6, 7)`).
 - `PATCH_SIZE`: Image patch pixel dimension.
+- `NOTE`: Optional string note/description included in `submission.json` and `manifest.json` for run tracking.
 - `WORKERS_PER_ARRAY_TASK`: Number of workers (models to train) packed into each array task.
 - `CPUS_PER_WORKER`: Number of CPUs allocated to each worker task.
 - `MAX_ACTIVE_ARRAY_TASKS`: Maximum concurrently running Slurm array tasks.
@@ -46,6 +47,7 @@ Array Tasks  | Glimpse | Seeds      | Models
 **Tips**
 - **Single Model Type Per Run:** A single execution of `submit_ram.py` can evaluate multiple seeds and glimpse counts, but only supports 1 model type at a time (`MODEL = "policy"` or `MODEL = "random"`).
 - **Simultaneous Comparisons:** If you wish to train both `"policy"` and `"random"` models concurrently, run two separate submission scripts (one for each model type). In this case, it is advised to set `MAX_ACTIVE_ARRAY_TASKS = 2` (or appropriately throttle resources) per workflow so they share cluster concurrency cleanly.
+- **Run Notes / Annotations:** Set `NOTE` in `submit_ram.py` to annotate runs (e.g., `NOTE = "Using tanh activation instead of hard clamping"`). The note is recorded directly in `manifest.json` so you can identify variations between runs with identical hyperparameter settings without checking git logs.
 
 **Verification and Postprocessing prep**
 After your job has finished, cd into the directory in results/month, and run:
