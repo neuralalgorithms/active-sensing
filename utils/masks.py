@@ -98,31 +98,39 @@ def compute_expected_reveal(H: int = 32, W: int = 32, n_glimpses: int = 10, patc
 
 def extract_patch(images: torch.Tensor, locations: torch.Tensor, patch_size: int) -> torch.Tensor:
     """
-    Extracts a single fixed-size patch per image at the specified location.
+    Extracts a center-based square crop of side length `patch_size` for each image.
     Non-differentiable (hard crop via integer indexing). Intended for use with REINFORCE,
     where gradients flow through the policy log-prob rather than the crop operation.
 
     Args:
-        images:    (N, C, H, W) — raw, unmasked images.
-        locations: (N, 2)       — (x, y) coordinates in [-1, 1] normalized space.
-        patch_size: int         — side length of the square patch to extract.
+        images:    (N, C, H, W) tensor — raw, unmasked images.
+        locations: (N, 2) tensor in normalized [-1, 1] coordinates.
+        patch_size: Integer crop side length.
     Returns:
-        patches: (N, C, patch_size, patch_size)
+        patches:   (N, C, patch_size, patch_size) tensor.
     """
     N, C, H, W = images.shape
 
-    # Unnormalize from [-1, 1] to valid top-left pixel indices
-    # Clamp to ensure the full patch stays in-bounds
+    # Enforce shape/device contracts
     loc = locations.detach()
     x_norm = loc[:, 0]  # (N,)
     y_norm = loc[:, 1]  # (N,)
 
-    x0 = ((x_norm + 1.0) / 2.0 * (W - patch_size)).long().clamp(0, W - patch_size)
-    y0 = ((y_norm + 1.0) / 2.0 * (H - patch_size)).long().clamp(0, H - patch_size)
+    # 1. Convert normalized coordinates [-1, 1] to continuous center coordinates [0, W-1]
+    c_x = (x_norm + 1.0) / 2.0 * (W - 1)
+    c_y = (y_norm + 1.0) / 2.0 * (H - 1)
+
+    # 2. Convert center coordinate to top-left pixel index with even-patch tie breaking
+    x0 = torch.floor(c_x - (patch_size - 1) / 2.0).long()
+    y0 = torch.floor(c_y - (patch_size - 1) / 2.0).long()
+
+    # 3. Clamp top-left index to guarantee the patch stays entirely inside image bounds
+    x0 = x0.clamp(0, W - patch_size)
+    y0 = y0.clamp(0, H - patch_size)
 
     patches = []
     for i in range(N):
         patch = images[i, :, y0[i]:y0[i] + patch_size, x0[i]:x0[i] + patch_size]
         patches.append(patch)
 
-    return torch.stack(patches, dim=0)  # (N, C, patch_size, patch_size)
+    return torch.stack(patches, dim=0)

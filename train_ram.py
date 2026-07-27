@@ -1,5 +1,6 @@
 import torch
 import os
+import copy
 import argparse
 import models
 from utils.utils import get_dataloaders, save_to_csv, save_weights_safetensors
@@ -64,7 +65,8 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
         "val_loss": [],
         "val_f1": []
     }
-    best_val_acc: float = 0.0
+    best_val_acc: float = -1.0
+    best_state_dict = copy.deepcopy(model.state_dict())
 
     # Lists for calculating interval averages
     interval_val_accs = []
@@ -88,33 +90,35 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
             logits, log_pis, baselines, locations = model(images, num_glimpses, patch_size, random_baseline=random_baseline)
             
             # 1. Classification loss
-            bce_loss = criterion(logits, targets)
+            bce_loss = criterion(logits.view(-1), targets.view(-1))
             
             # Predict
             preds = (torch.sigmoid(logits) > 0.5).float()
             
             # 2. Reward: 1 if correct, 0 if incorrect
             # We reshape targets and preds to match so we can squeeze to get a 1D tensor
-            rewards = (preds == targets).float().squeeze(-1) # (N,)
+            rewards = (preds.view(-1) == targets.view(-1)).float() # (N,)
             
             if not random_baseline:
                 # Compute policy loss and baseline loss
                 policy_loss = 0.0
                 baseline_loss = 0.0
-                
-                for log_pi, b_t in zip(log_pis, baselines):
-                    # Baseline loss: MSE between predicted baseline and actual reward
-                    baseline_loss += mse_criterion(b_t, rewards).mean()
-                    
-                    # Policy loss: -log_pi * (R - b_t)
-                    # b_t must be detached so gradients don't flow back through baseline net from policy loss
-                    advantage = rewards - b_t.detach()
-                    policy_loss += (-log_pi * advantage).mean()
-                
-                # Average over glimpses
-                policy_loss = policy_loss / num_glimpses
-                baseline_loss = baseline_loss / num_glimpses
-                
+
+                # log_pis is empty for a 1-glimpse model (zero location actions taken)
+                if len(log_pis) > 0:
+                    for log_pi, b_t in zip(log_pis, baselines):
+                        # Baseline loss: MSE between predicted baseline and actual reward
+                        baseline_loss += mse_criterion(b_t, rewards).mean()
+
+                        # Policy loss: -log_pi * (R - b_t)
+                        # b_t must be detached so gradients don't flow back through baseline net from policy loss
+                        advantage = rewards - b_t.detach()
+                        policy_loss += (-log_pi * advantage).mean()
+
+                    # Average over T-1 actions actually taken
+                    policy_loss = policy_loss / len(log_pis)
+                    baseline_loss = baseline_loss / len(baselines)
+
                 loss = bce_loss + policy_loss + baseline_loss
             else:
                 loss = bce_loss
@@ -122,7 +126,7 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
             optimizer.step()
 
             running_train_loss += loss.item()
-            train_correct += (preds == targets).sum().item()
+            train_correct += (preds.view(-1) == targets.view(-1)).sum().item()
             train_total += targets.size(0)
 
         epoch_train_loss = running_train_loss / len(train_loader)
@@ -139,30 +143,32 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
                 
                 logits, log_pis, baselines, locations = model(images, num_glimpses, patch_size, random_baseline=random_baseline)
                 
-                bce_loss = criterion(logits, targets)
+                bce_loss = criterion(logits.view(-1), targets.view(-1))
                 
                 preds = (torch.sigmoid(logits) > 0.5).float()
-                rewards = (preds == targets).float().squeeze(-1)
+                rewards = (preds.view(-1) == targets.view(-1)).float()
                 
                 if not random_baseline:
                     policy_loss = 0.0
                     baseline_loss = 0.0
-                    
-                    # Note: during eval, log_pi is 0, so policy_loss is 0, but we can compute it for logging parity
-                    for log_pi, b_t in zip(log_pis, baselines):
-                        baseline_loss += mse_criterion(b_t, rewards).mean()
-                        advantage = rewards - b_t.detach()
-                        policy_loss += (-log_pi * advantage).mean()
-                        
-                    policy_loss = policy_loss / num_glimpses
-                    baseline_loss = baseline_loss / num_glimpses
-                    
+
+                    # Note: during eval, log_pi is 0, so policy_loss is 0, but we compute it for logging parity
+                    # log_pis is empty for a 1-glimpse model
+                    if len(log_pis) > 0:
+                        for log_pi, b_t in zip(log_pis, baselines):
+                            baseline_loss += mse_criterion(b_t, rewards).mean()
+                            advantage = rewards - b_t.detach()
+                            policy_loss += (-log_pi * advantage).mean()
+
+                        policy_loss = policy_loss / len(log_pis)
+                        baseline_loss = baseline_loss / len(baselines)
+
                     loss = bce_loss + policy_loss + baseline_loss
                 else:
                     loss = bce_loss
                 
                 running_val_loss += loss.item()
-                val_correct += (preds == targets).sum().item()
+                val_correct += (preds.view(-1) == targets.view(-1)).sum().item()
                 val_total += targets.size(0)
                 all_preds.extend(preds.cpu().numpy())
                 all_targets.extend(targets.cpu().numpy())
@@ -183,7 +189,9 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
         interval_train_accs.append(epoch_train_acc)
         interval_val_losses.append(epoch_val_loss)
         interval_train_losses.append(epoch_train_loss)
-        best_val_acc = max(best_val_acc, epoch_val_acc)
+        if epoch_val_acc > best_val_acc:
+            best_val_acc = epoch_val_acc
+            best_state_dict = copy.deepcopy(model.state_dict())
         
         # --- LOGGING ---
         pbar.set_postfix({
@@ -213,6 +221,7 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
             interval_val_accs, interval_train_accs = [], []
             interval_val_losses, interval_train_losses = [], []
 
+    model.load_state_dict(best_state_dict)
     return model, best_val_acc, history
 
 if __name__ == "__main__":

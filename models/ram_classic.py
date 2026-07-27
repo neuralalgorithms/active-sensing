@@ -124,24 +124,29 @@ class RecurrentAttentionModelClassic(nn.Module):
         baselines: list[torch.Tensor] = []
         locations: list[torch.Tensor] = []
 
-        for _ in range(num_glimpses):
-            if random_baseline:
-                loc = torch.empty(N, 2, device=device).uniform_(-1.0, 1.0)
+        for step in range(num_glimpses):
+            # Record the location that will actually be observed this step
+            locations.append(loc)
 
             patches = extract_patch(images, loc, patch_size)
             g_t = self.glimpse_net(patches, loc)
             h_t = self.core_rnn(g_t, h_t)
 
-            if not random_baseline:
-                loc, log_pi = self.location_net(h_t)
-                b_t         = self.baseline_net(h_t)
-            else:
-                log_pi = torch.zeros(N, device=device)
-                b_t    = torch.zeros(N, device=device)
+            # Only sample a next location if there is a subsequent glimpse
+            if step < num_glimpses - 1:
+                if not random_baseline:
+                    loc, log_pi = self.location_net(h_t.detach())
+                    # Clamp to [-1, 1] to prevent the coordinate-domain mismatch
+                    # from creating an explosive feedback loop into GlimpseNetwork
+                    loc = torch.clamp(loc, -1.0, 1.0)
+                    b_t = self.baseline_net(h_t.detach())
+                else:
+                    loc = torch.empty(N, 2, device=device).uniform_(-1.0, 1.0)
+                    log_pi = torch.zeros(N, device=device)
+                    b_t    = torch.zeros(N, device=device)
 
-            log_pis.append(log_pi)
-            baselines.append(b_t)
-            locations.append(loc)
+                log_pis.append(log_pi)
+                baselines.append(b_t)
 
         logit = self.action_net(h_t)
 
