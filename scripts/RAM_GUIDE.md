@@ -69,3 +69,18 @@ When submitting a job, the script prints the Compute array ID and the Collector 
 Use scancel compute_array_ID; the collector job will run soon after and exit on its own.
 The manifest will report "aborted" and
 `sacct -X -j COLLECTOR_JOB_ID --format=JobIDRaw,State,ExitCode` will show an error code of 20.
+
+**Manual Collection**
+If a collector Slurm job fails or if you need to run collection manually on local/synced data, use `scripts/run_collector.bash`:
+
+```bash
+./scripts/run_collector.bash <RUN_DIR> [PARENT_JOB_ID]
+```
+
+Example:
+```bash
+./scripts/run_collector.bash results/2026-07/307898__ram-random
+```
+
+This script sets up all required environment variables (`RAM_RUN_DIR`, `RAM_PARENT_JOB_ID`, `RAM_SLURM_LOG_DIR`, `RAM_PARENT_STATE`), executes `collect_ram_results.py`, compiles condition CSVs and weight checkpoints, writes `manifest.json`, and cleans up `.staging/`.
+
