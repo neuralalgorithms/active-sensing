@@ -5,8 +5,24 @@ from torch.utils.data import TensorDataset, DataLoader, random_split
 import os
 import pandas as pd
 from pathlib import Path
+import random
 
-def get_dataloaders(data_dir: str, grid_size: int=32, batch_size: int=32, seed: int=42, split: float=0.2, num_workers: int=0) -> tuple[DataLoader, DataLoader]: # you could go further with tuple[DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]]], but there's a limit to how much type hinting one should do! 
+def set_seed(seed: int) -> None:
+    """Sets the random seed for completely reproducible results."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+def seed_worker(worker_id):
+    """Ensures independent and deterministic seeds for DataLoader workers."""
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+def get_dataloaders(data_dir: str, grid_size: int=32, batch_size: int=32, seed: int=42, split: float=0.2, num_workers: int=0) -> tuple[DataLoader, DataLoader]: # you could go further with tuple[DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]]], but there's a limit to how much type hinting one should do!
     """
     Creates balanced dataloaders for binary classification of patchy vs. stripy grids.
     """
@@ -14,14 +30,14 @@ def get_dataloaders(data_dir: str, grid_size: int=32, batch_size: int=32, seed: 
 
     if not path.is_dir():
         raise FileNotFoundError(f"Dataset directory not found: {path.resolve()}")
-    
+
     try:
         data_p = np.load(path / "data_patchy.npz")["images"]
         data_h = np.load(path / "data_horizontal.npz")["images"]
         data_v = np.load(path / "data_vertical.npz")["images"]
     except Exception as e:
         raise IOError(f"Error: Could not load .npz files from {path}. Check names/format. \n{e}")
-    
+
     X_stripy = np.concatenate([data_h, data_v], axis=0) # Combine horizontal and vertical into a single class "stripy" (class 0)
 
     X = np.concatenate([data_p, X_stripy], axis=0)
@@ -43,12 +59,15 @@ def get_dataloaders(data_dir: str, grid_size: int=32, batch_size: int=32, seed: 
         dataset, [train_len, test_len], generator=torch.Generator().manual_seed(seed)
     )
 
-    return DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers), \
-           DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    g = torch.Generator()
+    g.manual_seed(seed)
+
+    return DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, worker_init_fn=seed_worker, generator=g), \
+           DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, worker_init_fn=seed_worker, generator=g)
 
 def save_to_csv(output_dir, filename, data):
     """
-    Saves a list of dictionaries to a CSV. 
+    Saves a list of dictionaries to a CSV.
     Appends if the file exists, creates it with headers if it doesn't.
     """
     output_base = Path(output_dir)

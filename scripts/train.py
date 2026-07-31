@@ -2,7 +2,7 @@ import torch
 import os
 import models
 import argparse
-from utils.utils import get_dataloaders, save_to_csv
+from utils.utils import get_dataloaders, save_to_csv, set_seed
 from utils.masks import StaticMaskedDataset, glimpse_mask
 from torch.utils.data import DataLoader
 from sklearn.metrics import f1_score
@@ -133,7 +133,7 @@ def train(num_glimpses: int, patch_size: int, loaders: tuple[DataLoader, DataLoa
         interval_val_losses.append(epoch_val_loss)
         interval_train_losses.append(epoch_train_loss)
         best_val_acc = max(best_val_acc, epoch_val_acc)
-        
+
         # --- LOGGING ---
         pbar.set_postfix({
             "T_Loss": f"{epoch_train_loss:.3f}",
@@ -142,7 +142,7 @@ def train(num_glimpses: int, patch_size: int, loaders: tuple[DataLoader, DataLoa
             "V_Acc": f"{epoch_val_acc:.1f}%",
             "V_F1": f"{epoch_f1:.3f}"
         })
-        
+
         if (epoch + 1) % EPOCH_COUNTER == 0:
             avg_val_acc = sum(interval_val_accs) / len(interval_val_accs)
             avg_train_acc = sum(interval_train_accs) / len(interval_train_accs)
@@ -176,7 +176,7 @@ if __name__ == "__main__":
     # Determine execution mode
     seeds = [args.seed] if args.seed is not None else [1]
     num_glimpses_list = args.glimpses if args.glimpses is not None else [14, 16, 20, 25]
-    patch_sizes = [args.patch_size] 
+    patch_sizes = [args.patch_size]
 
     # Task ID for filename resolution: prioritize seed for uniqueness in multi-task jobs
     file_id = args.seed if args.seed is not None else os.environ.get("SLURM_ARRAY_TASK_ID", 1)
@@ -188,6 +188,7 @@ if __name__ == "__main__":
 
     for patch_size in patch_sizes:
         for seed in seeds:
+            set_seed(seed)
             print(f">>> PATCH SIZE: {patch_size} | SEED: {seed}")
             train_loader, val_loader = get_dataloaders(data_dir=data_dir, grid_size=GRID_SIZE, batch_size=BATCH_SIZE, seed=seed)
             if train_loader is None:

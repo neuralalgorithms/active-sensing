@@ -3,7 +3,7 @@ import os
 import copy
 import argparse
 import models
-from utils.utils import get_dataloaders, save_to_csv, save_weights_safetensors
+from utils.utils import get_dataloaders, save_to_csv, save_weights_safetensors, set_seed
 from tqdm import tqdm
 from sklearn.metrics import f1_score
 
@@ -45,11 +45,11 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
     train_loader, val_loader = loaders
 
     model = MODEL_CLASS(patch_size=patch_size, std=std).to(DEVICE)
-    
+
     # In more complex implementations, we might use a separate optimizer/LR for the baseline net.
     # For simplicity, we use one optimizer for all parameters.
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    
+
     criterion = torch.nn.BCEWithLogitsLoss()
     mse_criterion = torch.nn.MSELoss(reduction='none')
 
@@ -88,17 +88,17 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
             optimizer.zero_grad()
 
             logits, log_pis, baselines, locations = model(images, num_glimpses, patch_size, random_baseline=random_baseline)
-            
+
             # 1. Classification loss
             bce_loss = criterion(logits.view(-1), targets.view(-1))
-            
+
             # Predict
             preds = (torch.sigmoid(logits) > 0.5).float()
-            
+
             # 2. Reward: 1 if correct, 0 if incorrect
             # We reshape targets and preds to match so we can squeeze to get a 1D tensor
             rewards = (preds.view(-1) == targets.view(-1)).float() # (N,)
-            
+
             if not random_baseline:
                 # Compute policy loss and baseline loss
                 policy_loss = 0.0
@@ -140,14 +140,14 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
         with torch.no_grad():
             for images, targets in val_loader:
                 images, targets = images.to(DEVICE), targets.to(DEVICE)
-                
+
                 logits, log_pis, baselines, locations = model(images, num_glimpses, patch_size, random_baseline=random_baseline)
-                
+
                 bce_loss = criterion(logits.view(-1), targets.view(-1))
-                
+
                 preds = (torch.sigmoid(logits) > 0.5).float()
                 rewards = (preds.view(-1) == targets.view(-1)).float()
-                
+
                 if not random_baseline:
                     policy_loss = 0.0
                     baseline_loss = 0.0
@@ -166,7 +166,7 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
                     loss = bce_loss + policy_loss + baseline_loss
                 else:
                     loss = bce_loss
-                
+
                 running_val_loss += loss.item()
                 val_correct += (preds.view(-1) == targets.view(-1)).sum().item()
                 val_total += targets.size(0)
@@ -192,7 +192,7 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
         if epoch_val_acc > best_val_acc:
             best_val_acc = epoch_val_acc
             best_state_dict = copy.deepcopy(model.state_dict())
-        
+
         # --- LOGGING ---
         pbar.set_postfix({
             "T_Loss": f"{epoch_train_loss:.3f}",
@@ -201,7 +201,7 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
             "V_Acc": f"{epoch_val_acc:.1f}%",
             "V_F1": f"{epoch_f1:.3f}"
         })
-        
+
         if (epoch + 1) % EPOCH_COUNTER == 0:
             avg_val_acc = sum(interval_val_accs) / len(interval_val_accs)
             avg_train_acc = sum(interval_train_accs) / len(interval_train_accs)
@@ -239,7 +239,7 @@ if __name__ == "__main__":
     # Determine execution mode
     seeds = [args.seed] if args.seed is not None else [1]
     num_glimpses_list = args.glimpses if args.glimpses is not None else [14, 16, 20, 25]
-    patch_sizes = [args.patch_size] 
+    patch_sizes = [args.patch_size]
 
     # Task ID for filename resolution
     file_id = args.seed if args.seed is not None else os.environ.get("SLURM_ARRAY_TASK_ID", 1)
@@ -252,6 +252,7 @@ if __name__ == "__main__":
 
     for patch_size in patch_sizes:
         for seed in seeds:
+            set_seed(seed)
             print(f">>> PATCH SIZE: {patch_size} | SEED: {seed}")
             train_loader, val_loader = get_dataloaders(data_dir=data_dir, grid_size=GRID_SIZE, batch_size=BATCH_SIZE, seed=seed)
             if train_loader is None:
@@ -259,10 +260,10 @@ if __name__ == "__main__":
 
             for n in num_glimpses_list:
                 print(f">>> NUMBER OF GLIMPSES: {n}")
-                
+
                 # Unlike train.py, we don't wrap val_loader in StaticMaskedDataset
                 # because the model determines its own sequence of glimpses dynamically.
-                
+
                 model, best_val_acc, history = train(n, patch_size, args.std, (train_loader, val_loader), random_baseline=args.random_baseline)
 
                 # Save trained weights in safetensors format
