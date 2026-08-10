@@ -1,0 +1,27 @@
+# "policy" or "random"
+MODEL = "random"
+# Seeds are 0 through SEED_COUNT - 1
+SEED_COUNT = 1
+# E.g. (1,2,4,7)
+GLIMPSES = [4]
+# E.g. 8
+PATCH_SIZE = 8
+# Optional description/note for this run in manifest
+NOTE = ""
+# Rec: 8
+WORKERS_PER_ARRAY_TASK = 1
+# Rec: 2
+CPUS_PER_WORKER = 2
+# Rec: 2 or 4
+MAX_ACTIVE_ARRAY_TASKS = 2
+# Rec: 8G. This is equivalent to --mem
+MEMORY_PER_ARRAY_TASK = "1G"
+# Rec: 01:00:00
+WALL_TIME = "00:10:00"
+# Rec: "normal"
+PARTITION = "normal"
+RESULTS_ROOT = "~/work/active-sensing/results"
+# If True, print mapping only; do not call Slurm
+DRY_RUN = false
+# If True, print line-by-line task mapping during dry run
+VERBOSE_DRY_RUN = false

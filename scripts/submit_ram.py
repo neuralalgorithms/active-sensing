@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Edit the control panel below, then run this file to submit a RAM array."""
+"""Submit a RAM array using the local TOML control panel."""
 
 from __future__ import annotations
 
@@ -8,29 +8,69 @@ import math
 import os
 import subprocess
 import sys
+import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
-
-# ---- Control panel: configure today's run here. ----
-MODEL = "random"                         # "policy" or "random"
-SEED_COUNT = 4                            # Seeds are 0 through SEED_COUNT - 1
-GLIMPSES = (1,2,4,7)
-PATCH_SIZE = 8
-NOTE = ""                                 # Optional description/note for this run in manifest
-WORKERS_PER_ARRAY_TASK = 8
-CPUS_PER_WORKER = 2
-MAX_ACTIVE_ARRAY_TASKS = 2
-MEMORY_PER_ARRAY_TASK = "8G"		 # --mem
-WALL_TIME = "01:00:00"
-PARTITION = "normal"
-RESULTS_ROOT = Path.home() / "work" / "active-sensing" / "results"
-DRY_RUN = False                           # If True, print mapping only; do not call Slurm
-VERBOSE_DRY_RUN = False                  # If True, print line-by-line task mapping during dry run
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPTS_DIR.parent
 COMPUTE_SCRIPT = SCRIPTS_DIR / "ram_compute.slurm"
 COLLECT_SCRIPT = SCRIPTS_DIR / "ram_collect.slurm"
+CONTROL_PANEL = SCRIPTS_DIR / "jpilot.local.toml"
+CONTROL_PANEL_EXAMPLE = SCRIPTS_DIR / "jpilot.example.toml"
+CONTROL_PANEL_KEYS = {
+    "MODEL", "SEED_COUNT", "GLIMPSES", "PATCH_SIZE", "NOTE",
+    "WORKERS_PER_ARRAY_TASK", "CPUS_PER_WORKER", "MAX_ACTIVE_ARRAY_TASKS",
+    "MEMORY_PER_ARRAY_TASK", "WALL_TIME", "PARTITION", "RESULTS_ROOT",
+    "DRY_RUN", "VERBOSE_DRY_RUN",
+}
+
+
+def load_control_panel() -> dict[str, object]:
+    if not CONTROL_PANEL.is_file():
+        raise RuntimeError(
+            f"Missing local control panel: {CONTROL_PANEL}. "
+            f"Copy {CONTROL_PANEL_EXAMPLE.name} to {CONTROL_PANEL.name} and configure it."
+        )
+    try:
+        with CONTROL_PANEL.open("rb") as config_file:
+            panel = tomllib.load(config_file)
+    except tomllib.TOMLDecodeError as error:
+        raise RuntimeError(f"Invalid TOML in {CONTROL_PANEL}: {error}") from error
+
+    unknown = set(panel) - CONTROL_PANEL_KEYS
+    missing = CONTROL_PANEL_KEYS - set(panel)
+    if unknown or missing:
+        details = []
+        if unknown:
+            details.append(f"unknown keys: {', '.join(sorted(unknown))}")
+        if missing:
+            details.append(f"missing keys: {', '.join(sorted(missing))}")
+        raise RuntimeError(f"Invalid control panel ({'; '.join(details)})")
+    return panel
+
+
+def configure() -> None:
+    global MODEL, SEED_COUNT, GLIMPSES, PATCH_SIZE, NOTE
+    global WORKERS_PER_ARRAY_TASK, CPUS_PER_WORKER, MAX_ACTIVE_ARRAY_TASKS
+    global MEMORY_PER_ARRAY_TASK, WALL_TIME, PARTITION, RESULTS_ROOT
+    global DRY_RUN, VERBOSE_DRY_RUN
+
+    panel = load_control_panel()
+    MODEL = panel["MODEL"]
+    SEED_COUNT = panel["SEED_COUNT"]
+    GLIMPSES = tuple(panel["GLIMPSES"])
+    PATCH_SIZE = panel["PATCH_SIZE"]
+    NOTE = panel["NOTE"]
+    WORKERS_PER_ARRAY_TASK = panel["WORKERS_PER_ARRAY_TASK"]
+    CPUS_PER_WORKER = panel["CPUS_PER_WORKER"]
+    MAX_ACTIVE_ARRAY_TASKS = panel["MAX_ACTIVE_ARRAY_TASKS"]
+    MEMORY_PER_ARRAY_TASK = panel["MEMORY_PER_ARRAY_TASK"]
+    WALL_TIME = panel["WALL_TIME"]
+    PARTITION = panel["PARTITION"]
+    RESULTS_ROOT = Path(panel["RESULTS_ROOT"]).expanduser()
+    DRY_RUN = panel["DRY_RUN"]
+    VERBOSE_DRY_RUN = panel["VERBOSE_DRY_RUN"]
 
 
 def validate() -> None:
@@ -176,6 +216,7 @@ def submission_payload(array_job_id: str, total_models: int, array_elements: int
 
 
 def main() -> int:
+    configure()
     validate()
     total_models, array_elements, array_spec, idle_slots = derive_array()
     if DRY_RUN:

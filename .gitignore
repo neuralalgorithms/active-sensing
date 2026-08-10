@@ -28,6 +28,7 @@ COMMIT_EDITMSG
 info.md
 refs
 config.yaml
+scripts/jpilot.local.toml
 
 # Logs & Test Results
 scripts/logs/
