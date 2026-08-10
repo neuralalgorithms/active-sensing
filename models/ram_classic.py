@@ -56,11 +56,9 @@ class LocationNetworkClassic(nn.Module):
         mu = self.fc(h_t)   # (N, 2)
 
         if self.training:
-            dist   = torch.distributions.Normal(mu, self.std)
-            loc    = dist.sample()                        # (N, 2)
-            log_pi = dist.log_prob(loc).sum(dim=-1)       # (N,)
+	    loc, log_pi = sample_truncated_gaussian(mu, self.std, low=-1.0, high=1.0)
         else:
-            loc    = mu
+            loc    = torch.clamp(mu, -1.0, 1.0)
             log_pi = torch.zeros(mu.size(0), device=mu.device)
 
         return loc.detach(), log_pi

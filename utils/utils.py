@@ -22,6 +22,37 @@ def seed_worker(worker_id):
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
+def sample_truncated_gaussian(
+    mu: torch.Tensor,
+    std: float | torch.Tensor,
+    low: float = -1.0,
+    high: float = 1.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Samples from a Truncated Gaussian distribution bounded to [low, high]
+    using Inverse CDF Sampling (Probability Integral Transform).
+
+    Returns:
+        sample: (N, D) - sampled locations strictly inside [low, high]
+        log_prob: (N,) - exact truncated log probabilities for REINFORCE
+    """
+    from torch.distributions import Normal
+
+    base_dist = Normal(mu, std)
+
+    cdf_low  = base_dist.cdf(mu.new_tensor(low))
+    cdf_high = base_dist.cdf(mu.new_tensor(high))
+
+    mass = (cdf_high - cdf_low).clamp(min=1e-8)
+
+    with torch.no_grad():
+        u = torch.rand_like(mu)
+        u_scaled = cdf_low + u * (cdf_high - cdf_low)
+        sample = base_dist.icdf(u_scaled.clamp(1e-6, 1.0 - 1e-6)).clamp(low, high)
+
+    log_prob = base_dist.log_prob(sample) - torch.log(mass)
+    return sample, log_prob.sum(dim=-1)
+
 def get_dataloaders(data_dir: str, grid_size: int=32, batch_size: int=32, seed: int=42, split: float=0.2, num_workers: int=0) -> tuple[DataLoader, DataLoader]: # you could go further with tuple[DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]]], but there's a limit to how much type hinting one should do!
     """
     Creates balanced dataloaders for binary classification of patchy vs. stripy grids.
