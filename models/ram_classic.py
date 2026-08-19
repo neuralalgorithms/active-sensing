@@ -15,6 +15,8 @@ Architecture matches the paper:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from utils.utils import sample_truncated_gaussian
+
 
 class GlimpseNetworkClassic(nn.Module):
     def __init__(self, patch_size: int, in_channels: int = 1, hidden_g: int = 256):
@@ -56,7 +58,7 @@ class LocationNetworkClassic(nn.Module):
         mu = self.fc(h_t)   # (N, 2)
 
         if self.training:
-	    loc, log_pi = sample_truncated_gaussian(mu, self.std, low=-1.0, high=1.0)
+            loc, log_pi = sample_truncated_gaussian(mu, self.std, low=-1.0, high=1.0)
         else:
             loc    = torch.clamp(mu, -1.0, 1.0)
             log_pi = torch.zeros(mu.size(0), device=mu.device)

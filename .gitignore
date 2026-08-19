@@ -54,3 +54,7 @@ run_ram.sh
 test_ram.py
 test_ramm.py
 train_ram_old.py
+
+# Particular assets
+assets/glimpse*
+assets/vis*
