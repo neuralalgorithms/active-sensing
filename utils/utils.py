@@ -22,6 +22,7 @@ def seed_worker(worker_id):
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
+"""
 def sample_truncated_gaussian(
     mu: torch.Tensor,
     std: float | torch.Tensor,
@@ -52,6 +53,50 @@ def sample_truncated_gaussian(
 
     log_prob = base_dist.log_prob(sample) - torch.log(mass)
     return sample, log_prob.sum(dim=-1)
+"""
+
+def sample_rejection_gaussian(
+    mu: torch.Tensor,
+    std: float | torch.Tensor,
+    low: float = -1.0,
+    high: float = 1.0,
+    max_resamples: int = 50,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Samples from a Gaussian using rejection sampling to stay within [low, high].
+    Avoids the explosive repeller gradients of exact Truncated Gaussian inverse-CDF 
+    sampling by evaluating log_prob on the base unnormalized Gaussian.
+
+    Returns:
+        sample: (N, D) - sampled locations strictly inside [low, high]
+        log_prob: (N,) - standard Gaussian log probabilities for REINFORCE
+    """
+    from torch.distributions import Normal
+
+    base_dist = Normal(mu, std)
+
+    with torch.no_grad():
+        sample = base_dist.sample()
+        invalid = (sample < low) | (sample > high)
+
+        attempts = 0
+        while invalid.any() and attempts < max_resamples:
+            resampled = base_dist.sample()
+            sample = torch.where(invalid, resampled, sample)
+            invalid = (sample < low) | (sample > high)
+            attempts += 1
+            
+        if invalid.any():
+            print(f"DEBUG REJECTION FAILURE:")
+            print(f"mu mean: {mu.mean(dim=0)}")
+            print(f"mu min: {mu.min(dim=0)[0]}")
+            print(f"mu max: {mu.max(dim=0)[0]}")
+            print(f"invalid shape: {invalid.shape}, invalid count: {invalid.sum()}")
+            raise RuntimeError(f"Rejection sampling failed to find valid samples within [low={low}, high={high}] after {max_resamples} attempts. Max valid attempt exhausted.")
+
+    log_prob = base_dist.log_prob(sample).sum(dim=-1)
+    return sample, log_prob
+
 
 def get_dataloaders(data_dir: str, grid_size: int=32, batch_size: int=32, seed: int=42, split: float=0.2, num_workers: int=0) -> tuple[DataLoader, DataLoader]: # you could go further with tuple[DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]]], but there's a limit to how much type hinting one should do!
     """

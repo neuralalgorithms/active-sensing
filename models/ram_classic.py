@@ -15,7 +15,7 @@ Architecture matches the paper:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils.utils import sample_truncated_gaussian
+from utils.utils import sample_rejection_gaussian
 
 
 class GlimpseNetworkClassic(nn.Module):
@@ -51,17 +51,19 @@ class LocationNetworkClassic(nn.Module):
         self.std = std
 
     def forward(self, h_t: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        # Paper §4: fl(h) = Linear(h) — no squashing of any kind.
-        # Applying tanh after sampling would corrupt log_prob (missing Jacobian),
-        # biasing the REINFORCE gradient. The paper relies on training to keep
-        # locations in the [-1, 1] coordinate range.
-        mu = self.fc(h_t)   # (N, 2)
+        # Bounded mean via tanh squashing: keeps mu strictly within (-1, 1).
+        # Does not transform the action variable x itself, preserving Gaussian log-prob
+        # without requiring a change-of-variables Jacobian correction.
+        mu = torch.tanh(self.fc(h_t))   # (N, 2)
 
         if self.training:
-            loc, log_pi = sample_truncated_gaussian(mu, self.std, low=-1.0, high=1.0)
+            loc, log_pi = sample_rejection_gaussian(mu, self.std, low=-1.0, high=1.0)
         else:
-            loc    = torch.clamp(mu, -1.0, 1.0)
-            log_pi = torch.zeros(mu.size(0), device=mu.device)
+            # Deterministic mean (original):
+            # loc    = torch.clamp(mu, -1.0, 1.0)
+            # log_pi = torch.zeros(mu.size(0), device=mu.device)
+            # Sample at inference:
+            loc, log_pi = sample_rejection_gaussian(mu, self.std, low=-1.0, high=1.0)
 
         return loc.detach(), log_pi
 
