@@ -34,7 +34,7 @@ EPOCH_COUNTER: int=25
 
 # --- TRAIN ---
 
-def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random_baseline: bool = False) -> tuple:
+def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random_baseline: bool = False, hidden_dim: int = 256) -> tuple:
     """
     Executes training loop with REINFORCE and dynamic masking.
     Returns:
@@ -44,7 +44,7 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
     """
     train_loader, val_loader = loaders
 
-    model = MODEL_CLASS(patch_size=patch_size, std=std).to(DEVICE)
+    model = MODEL_CLASS(patch_size=patch_size, hidden_dim=hidden_dim, std=std).to(DEVICE)
 
     # In more complex implementations, we might use a separate optimizer/LR for the baseline net.
     # For simplicity, we use one optimizer for all parameters.
@@ -233,18 +233,33 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, help="Directory to save CSV results")
     parser.add_argument("--std", type=float, default=0.1, help="Standard deviation for location policy")
     parser.add_argument("--baseline_lr", type=float, default=0.001, help="Learning rate for baseline network (not currently used separately)")
+    parser.add_argument("--hidden_dim", type=int, default=256, help="Hidden dimension for model capacity scaling")
+    parser.add_argument("--model_type", type=str, choices=["policy", "random"], default=None, help="Model architecture ('policy' or 'random')")
     parser.add_argument("--random_baseline", action="store_true", help="Use uniform random glimpse locations instead of the learned policy")
+    parser.add_argument("--results_file", type=str, default=None, help="Name of the results CSV file (defaults to results.csv if output_dir provided, or results_ram_...)")
     args = parser.parse_args()
+
+    # Determine model type and random_baseline
+    if args.model_type is not None:
+        random_baseline = (args.model_type == "random")
+        model_tag = args.model_type
+    else:
+        random_baseline = args.random_baseline
+        model_tag = "random" if random_baseline else "policy"
 
     # Determine execution mode
     seeds = [args.seed] if args.seed is not None else [1]
     num_glimpses_list = args.glimpses if args.glimpses is not None else [14, 16, 20, 25]
     patch_sizes = [args.patch_size]
 
-    # Task ID for filename resolution
+    # Task ID and results filename resolution
     file_id = args.seed if args.seed is not None else os.environ.get("SLURM_ARRAY_TASK_ID", 1)
-    model_tag = "random" if args.random_baseline else "policy"
-    results_file = f"results_ram_{model_tag}_seed_{file_id}.csv"
+    if args.results_file is not None:
+        results_file = args.results_file
+    elif args.output_dir is not None:
+        results_file = "results.csv"
+    else:
+        results_file = f"results_ram_{model_tag}_seed_{file_id}.csv"
 
     # Directory resolution logic
     data_dir = args.data_dir or os.environ.get("SLURM_TMPDIR") or os.environ.get("DATASET_ROOT") or "./data"
@@ -264,12 +279,13 @@ if __name__ == "__main__":
                 # Unlike train.py, we don't wrap val_loader in StaticMaskedDataset
                 # because the model determines its own sequence of glimpses dynamically.
 
-                model, best_val_acc, history = train(n, patch_size, args.std, (train_loader, val_loader), random_baseline=args.random_baseline)
+                model, best_val_acc, history = train(n, patch_size, args.std, (train_loader, val_loader), random_baseline=random_baseline, hidden_dim=args.hidden_dim)
 
                 # Save trained weights in safetensors format
                 weight_metadata = {
                     "model_class": model.__class__.__name__,
                     "model_type": model_tag,
+                    "hidden_dim": str(args.hidden_dim),
                     "patch_size": str(patch_size),
                     "num_glimpses": str(n),
                     "seed": str(seed),
@@ -289,6 +305,7 @@ if __name__ == "__main__":
                     "patch_size": patch_size,
                     "glimpses": n,
                     "seed": seed,
+                    "hidden_dim": args.hidden_dim,
                     "model_type": model_tag,
                     "epoch": i + 1,
                     "val_accuracy": history['val_acc'][i],

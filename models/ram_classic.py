@@ -19,19 +19,26 @@ from utils.utils import sample_rejection_gaussian
 
 
 class GlimpseNetworkClassic(nn.Module):
-    def __init__(self, patch_size: int, in_channels: int = 1, hidden_g: int = 256):
+    def __init__(
+        self,
+        patch_size: int,
+        in_channels: int = 1,
+        hidden_patch: int = 128,
+        hidden_loc: int = 128,
+        hidden_g: int = 256,
+    ):
         super().__init__()
         self.patch_size = patch_size
 
         # Patch pathway
-        self.fc_patch = nn.Linear(patch_size * patch_size * in_channels, 128)
+        self.fc_patch = nn.Linear(patch_size * patch_size * in_channels, hidden_patch)
         
         # Location pathway
-        self.fc_loc = nn.Linear(2, 128)
+        self.fc_loc = nn.Linear(2, hidden_loc)
         
         # Fusion pathways
-        self.fc_g_out = nn.Linear(128, hidden_g)
-        self.fc_l_out = nn.Linear(128, hidden_g)
+        self.fc_g_out = nn.Linear(hidden_patch, hidden_g)
+        self.fc_l_out = nn.Linear(hidden_loc, hidden_g)
 
     def forward(self, patches: torch.Tensor, locations: torch.Tensor) -> torch.Tensor:
         # Flatten patch
@@ -91,14 +98,26 @@ class ActionNetworkClassic(nn.Module):
 class RecurrentAttentionModelClassic(nn.Module):
     def __init__(
         self,
-        patch_size:  int   = 8,
-        in_channels: int   = 1,
-        hidden_g:    int   = 256,
-        hidden_h:    int   = 256,
-        std:         float = 0.1,
+        patch_size:   int = 8,
+        in_channels:  int = 1,
+        hidden_dim:   int | None = None,
+        hidden_patch: int | None = None,
+        hidden_loc:   int | None = None,
+        hidden_g:     int = 256,
+        hidden_h:     int = 256,
+        std:        float = 0.1,
     ):
         super().__init__()
-        self.glimpse_net  = GlimpseNetworkClassic(patch_size, in_channels, hidden_g)
+        if hidden_dim is not None:
+            hidden_g = hidden_dim
+            hidden_h = hidden_dim
+            hidden_patch = max(2, hidden_dim // 2) if hidden_patch is None else hidden_patch
+            hidden_loc = max(2, hidden_dim // 2) if hidden_loc is None else hidden_loc
+        else:
+            hidden_patch = 128 if hidden_patch is None else hidden_patch
+            hidden_loc = 128 if hidden_loc is None else hidden_loc
+
+        self.glimpse_net  = GlimpseNetworkClassic(patch_size, in_channels, hidden_patch, hidden_loc, hidden_g)
         self.core_rnn     = nn.RNNCell(hidden_g, hidden_h, nonlinearity='relu')
             
         self.location_net = LocationNetworkClassic(hidden_h, std)
