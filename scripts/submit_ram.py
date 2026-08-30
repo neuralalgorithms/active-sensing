@@ -139,27 +139,27 @@ def derive_array() -> tuple[int, int, str, int]:
     # ---- Derived array calculation (what actually gets passed to Slurm) ----
     # total models = seeds * glimpses (e.g. 32 * 7 = 224)
     total_models = SEED_COUNT * len(GLIMPSES)
-    # array elements = ceiling of (total models / workers per task)
-    array_elements = math.ceil(total_models / WORKERS_PER_ARRAY_TASK)
+    # array tasks = ceiling of (total models / workers per task)
+    array_tasks = math.ceil(total_models / WORKERS_PER_ARRAY_TASK)
     # This generates the string passed to Slurm, e.g. "0-27%4"
-    array_spec = f"0-{array_elements - 1}%{MAX_ACTIVE_ARRAY_TASKS}"
+    array_spec = f"0-{array_tasks - 1}%{MAX_ACTIVE_ARRAY_TASKS}"
     # How many padded slots at the tail end do nothing
-    idle_slots = array_elements * WORKERS_PER_ARRAY_TASK - total_models
-    return total_models, array_elements, array_spec, idle_slots
+    idle_slots = array_tasks * WORKERS_PER_ARRAY_TASK - total_models
+    return total_models, array_tasks, array_spec, idle_slots
 
 
-def print_mapping(total_models: int, array_elements: int, array_spec: str, idle_slots: int) -> None:
+def print_mapping(total_models: int, array_tasks: int, array_spec: str, idle_slots: int) -> None:
     print(f"Model: {MODEL}")
     if NOTE:
         print(f"Note: {NOTE}")
     print(f"Seeds: 0-{SEED_COUNT - 1} ({SEED_COUNT} seeds)")
     print(f"Glimpses: {','.join(map(str, GLIMPSES))} ({len(GLIMPSES)} values)")
     print(f"Total models: {total_models}")
-    print(f"Array elements: {array_elements}")
+    print(f"Array tasks: {array_tasks}")
     print(f"Array: --array={array_spec}")
-    print(f"Workers per array element: {WORKERS_PER_ARRAY_TASK}")
+    print(f"Workers per array task: {WORKERS_PER_ARRAY_TASK}")
     print(f"CPUs per worker: {CPUS_PER_WORKER}")
-    print(f"Maximum active elements: {MAX_ACTIVE_ARRAY_TASKS}")
+    print(f"Maximum active array tasks: {MAX_ACTIVE_ARRAY_TASKS}")
     print(f"Idle tail slots: {idle_slots}")
 
     print("\nDistribution Summary:")
@@ -184,7 +184,7 @@ def print_mapping(total_models: int, array_elements: int, array_spec: str, idle_
             print(f"  task={task_id} slot={slot} global_index={global_index} glimpse={GLIMPSES[glimpse_index]} seed={seed}")
 
 
-def submission_payload(array_job_id: str, total_models: int, array_elements: int, array_spec: str, idle_slots: int) -> dict:
+def submission_payload(array_job_id: str, total_models: int, array_tasks: int, array_spec: str, idle_slots: int) -> dict:
     return {
         "schema_version": 3,
         "submitted_at": datetime.now(timezone.utc).isoformat(),
@@ -200,7 +200,7 @@ def submission_payload(array_job_id: str, total_models: int, array_elements: int
             "ordering": "glimpse-major",
             "workers_per_array_task": WORKERS_PER_ARRAY_TASK,
             "total_models": total_models,
-            "array_elements": array_elements,
+            "array_tasks": array_tasks,
             "idle_tail_slots": idle_slots,
         },
         "resources": {
@@ -222,9 +222,9 @@ def submission_payload(array_job_id: str, total_models: int, array_elements: int
 def main() -> int:
     configure()
     validate()
-    total_models, array_elements, array_spec, idle_slots = derive_array()
+    total_models, array_tasks, array_spec, idle_slots = derive_array()
     if DRY_RUN:
-        print_mapping(total_models, array_elements, array_spec, idle_slots)
+        print_mapping(total_models, array_tasks, array_spec, idle_slots)
         return 0
     if not COMPUTE_SCRIPT.is_file() or not COLLECT_SCRIPT.is_file():
         raise RuntimeError("Missing RAM compute or collector runner script")
@@ -272,7 +272,7 @@ def main() -> int:
     except RuntimeError as error:
         raise RuntimeError(f"{error}; compute array {array_job_id} remains held") from error
 
-    payload = submission_payload(array_job_id, total_models, array_elements, array_spec, idle_slots)
+    payload = submission_payload(array_job_id, total_models, array_tasks, array_spec, idle_slots)
     payload["slurm"]["collector_job_id"] = int(collector_job_id)
     atomic_json(run_dir / "submission.json", payload)
     try:
