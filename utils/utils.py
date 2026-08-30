@@ -29,14 +29,14 @@ def sample_truncated_gaussian(
     low: float = -1.0,
     high: float = 1.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """
+    '''
     Samples from a Truncated Gaussian distribution bounded to [low, high]
     using Inverse CDF Sampling (Probability Integral Transform).
 
     Returns:
         sample: (N, D) - sampled locations strictly inside [low, high]
         log_prob: (N,) - exact truncated log probabilities for REINFORCE
-    """
+    '''
     from torch.distributions import Normal
 
     base_dist = Normal(mu, std)
@@ -97,12 +97,25 @@ def sample_rejection_gaussian(
     log_prob = base_dist.log_prob(sample).sum(dim=-1)
     return sample, log_prob
 
-
-def get_dataloaders(data_dir: str, grid_size: int=32, batch_size: int=32, seed: int=42, split: float=0.2, num_workers: int=0) -> tuple[DataLoader, DataLoader]: # you could go further with tuple[DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]]], but there's a limit to how much type hinting one should do!
+def get_dataloaders(
+    data_dir: str = "data",
+    grid_size: int = 32,
+    batch_size: int = 32,
+    seed: int = 42,
+    split: float = 0.2,
+    num_workers: int = 0,
+    dataset_name: str | None = None,
+) -> tuple[DataLoader, DataLoader]: # you could go further with tuple[DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]]], but there's a limit to how much type hinting one should do!
     """
     Creates balanced dataloaders for binary classification of patchy vs. stripy grids.
     """
-    path = Path(data_dir) / f"dataset-{grid_size}-balanced"
+    base = Path(data_dir)
+    if dataset_name is not None:
+        path = base / dataset_name
+    elif (base / "data_patchy.npz").exists():
+        path = base
+    else:
+        path = base / f"dataset-{grid_size}-balanced"
 
     if not path.is_dir():
         raise FileNotFoundError(f"Dataset directory not found: {path.resolve()}")
@@ -125,6 +138,13 @@ def get_dataloaders(data_dir: str, grid_size: int=32, batch_size: int=32, seed: 
 
     dataset = TensorDataset(X_tensor, y_tensor)
 
+    g = torch.Generator()
+    g.manual_seed(seed)
+
+    if split <= 0.0:
+        full_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, worker_init_fn=seed_worker, generator=g)
+        return full_loader, full_loader
+
     # Split
     train_len = int((1 - split) * len(dataset))
     test_len = len(dataset) - train_len
@@ -132,11 +152,8 @@ def get_dataloaders(data_dir: str, grid_size: int=32, batch_size: int=32, seed: 
     # num_workers = int(os.getenv("SLURM_CPUS_PER_TASK", 0)) # use multiple CPUs if available
 
     train_ds, test_ds = random_split(
-        dataset, [train_len, test_len], generator=torch.Generator().manual_seed(seed)
+        dataset, [train_len, test_len], generator=g
     )
-
-    g = torch.Generator()
-    g.manual_seed(seed)
 
     return DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, worker_init_fn=seed_worker, generator=g), \
            DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, worker_init_fn=seed_worker, generator=g)
