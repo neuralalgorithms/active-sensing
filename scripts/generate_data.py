@@ -3,6 +3,7 @@ import scipy.spatial.distance as dist
 import time
 import matplotlib.pyplot as plt
 import sys
+from pathlib import Path
 
 SPAN: float=27.8
 GRID_SIZE: int=77
@@ -86,9 +87,10 @@ if __name__ == "__main__":
             print("Resuming generation...")
         # --------------------------------
 
-    filename = f"data/dataset-77-balanced/data_{image_class}.npz"
-    np.savez_compressed(filename, images=X_data, labels=y_labels)
+    filepath = Path(f"data/test-77-balanced/data_{image_class}.npz")
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(filepath, images=X_data, labels=y_labels)
 
     print(
-        f"Generation complete. Saved to {filename} in {time.time() - start:.2f} seconds."
+        f"Generation complete. Saved to {filepath} in {time.time() - start:.2f} seconds."
     )
