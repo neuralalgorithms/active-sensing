@@ -58,3 +58,20 @@ train_ram_old.py
 # Particular assets
 assets/glimpse*
 assets/vis*
+assets/truncated*
+# visualize_glimpses.py
+
+# Docs and reference
+5-Mnih 0 - Recurrent Models of Visual Attention-cut.pdf
+
+# Legacy pipeline
+# PIPELINE_ARCHITECTURE.md
+collect_ram_results.py
+ram_collect.slurm
+ram_compute.slurm
+run_collector.bash
+submit_ram.py
+
+# Legacy scripts
+test_parallel_ram.slurm
+test_single_ram.slurm
