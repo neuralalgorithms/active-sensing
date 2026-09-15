@@ -10,19 +10,35 @@ GRID_SIZE: int=77
 CLASS_MAP: dict[str, int] = {"patchy": 0, "horizontal": 1, "vertical": 2}
 
 
-def k_patchy(xa: np.ndarray, xb: np.ndarray) -> np.ndarray:
-    """Isotropic RBF kernel for patches/blobs."""
+def k_patchy(xa: np.ndarray, xb: np.ndarray, length_scale: float = 1.39) -> np.ndarray:
+    """Paper-accurate isotropic RBF kernel for patches/blobs (Yang et al.)."""
+    sq_dist = dist.cdist(xa, xb, "sqeuclidean")
+    phi = sq_dist / (length_scale**2)
+    return np.exp(-0.5 * phi)
+
+
+def k_anisotropic(xa: np.ndarray, xb: np.ndarray, lh: float, lv: float) -> np.ndarray:
+    """Paper-accurate anisotropic RBF kernel for horizontal/vertical stripes (Yang et al.)."""
+    u_dist_sq = dist.cdist(xa[:, :1], xb[:, :1], "sqeuclidean")
+    v_dist_sq = dist.cdist(xa[:, 1:], xb[:, 1:], "sqeuclidean")
+    phi = (u_dist_sq / (lh**2)) + (v_dist_sq / (lv**2))
+    return np.exp(-0.5 * phi)
+
+
+def k_patchy_inverse(xa: np.ndarray, xb: np.ndarray) -> np.ndarray:
+    """Legacy isotropic RBF kernel (treats 1.39 as precision/frequency)."""
     sq_dist = dist.cdist(xa, xb, "sqeuclidean")
     phi = (1.39**2) * sq_dist
     return np.exp(-0.5 * phi)
 
 
-def k_anisotropic(xa: np.ndarray, xb: np.ndarray, lh: float, lv: float) -> np.ndarray:
-    """Anisotropic RBF kernel for horizontal/vertical stripes."""
+def k_anisotropic_inverse(xa: np.ndarray, xb: np.ndarray, lh: float, lv: float) -> np.ndarray:
+    """Legacy anisotropic RBF kernel (treats lh, lv as precision/frequency)."""
     u_dist_sq = dist.cdist(xa[:, :1], xb[:, :1], "sqeuclidean")
     v_dist_sq = dist.cdist(xa[:, 1:], xb[:, 1:], "sqeuclidean")
     phi = (lh**2 * u_dist_sq) + (lv**2 * v_dist_sq)
     return np.exp(-0.5 * phi)
+
 
 def generate_valid_sample(L: np.ndarray, num_vars: int) -> np.ndarray:
     """Generates a sample and rejects samples outside bounds [-4, 4] """
@@ -32,16 +48,17 @@ def generate_valid_sample(L: np.ndarray, num_vars: int) -> np.ndarray:
         if np.all(f >= -4) and np.all(f <= 4): # Rejection sampling
             return f
 
+
 def get_cholesky(X: np.ndarray, class_name: str) -> np.ndarray:
     """Computes Cholesky decomp of covariance matrix for a given class."""
     print(f"Computing {GRID_SIZE} x {GRID_SIZE} Covariance Matrix and Cholesky Decomp for {class_name}...")
 
     if class_name == "patchy":
-        covar = k_patchy(X, X)
+        covar = k_patchy(X, X, length_scale=1.39)
     elif class_name == "vertical":
-        covar = k_anisotropic(X, X, 4.63, 0.91)
+        covar = k_anisotropic(X, X, lh=0.91, lv=4.63)
     elif class_name == "horizontal":
-        covar = k_anisotropic(X, X, 0.91, 4.63)
+        covar = k_anisotropic(X, X, lh=4.63, lv=0.91)
     else:
         raise ValueError(f"Unknown class: {class_name}")
     covar += 1e-6 * np.eye(len(X))
