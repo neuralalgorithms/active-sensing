@@ -11,6 +11,7 @@ from .cnn import (
 )
 from .ram_modern import RecurrentAttentionModelModern # noqa: F401
 from .ram_classic import RecurrentAttentionModelClassic # noqa: F401
+from .ram_v2 import RecurrentAttentionModelV2 # noqa: F401
 
 # previous code
 """

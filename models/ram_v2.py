@@ -1,16 +1,16 @@
-# models/ram_classic.py
+# models/ram_v2.py
 """
-Recurrent Attention Model (RAM) — Mnih et al., 2014 (Classic Variant)
+Recurrent Attention Model (RAM) — V2 Variant
 Trained with REINFORCE. Uses a single-scale hard-crop glimpse sensor.
 
-Architecture matches the paper:
-    GlimpseNetwork    — fully connected pathways (128 units) fused to 256 units
-    LocationNetwork   — fl(h) = Linear(h), no squashing (paper §4 verbatim)
-                        Coordinates: (0,0) = image centre, (-1,-1) = top-left corner
-    BaselineNetwork   — unconstrained linear output trained via MSE on cumulative
-                        reward; no sigmoid squashing, per the paper's definition
-    ActionNetwork     — maps final hidden state to binary classification logit
-    RecurrentAttentionModelClassic — uses Vanilla RNN with ReLU activation
+Architecture:
+    GlimpseNetworkV2    — simplified single-stage pathway fusion (patch and location 
+                          projected directly to hidden_g)
+    LocationNetworkV2   — fl(h) = Linear(h) with tanh mean squashing and rejection sampling
+                          Coordinates: (0,0) = image centre, (-1,-1) = top-left corner
+    BaselineNetworkV2   — unconstrained linear output trained via MSE on cumulative reward
+    ActionNetworkV2     — maps final hidden state to binary classification logit
+    RecurrentAttentionModelV2 — uses Vanilla RNN with ReLU activation
 """
 import torch
 import torch.nn as nn
@@ -18,40 +18,32 @@ import torch.nn.functional as F
 from utils.utils import sample_rejection_gaussian
 
 
-class GlimpseNetworkClassic(nn.Module):
+class GlimpseNetworkV2(nn.Module):
     def __init__(
         self,
         patch_size: int,
         in_channels: int = 1,
-        hidden_patch: int = 128,
-        hidden_loc: int = 128,
         hidden_g: int = 256,
     ):
         super().__init__()
         self.patch_size = patch_size
 
-        # Patch pathway
-        self.fc_patch = nn.Linear(patch_size * patch_size * in_channels, hidden_patch)
-        
-        # Location pathway
-        self.fc_loc = nn.Linear(2, hidden_loc)
-        
-        # Fusion pathways
-        self.fc_g_out = nn.Linear(hidden_patch, hidden_g)
-        self.fc_l_out = nn.Linear(hidden_loc, hidden_g)
+        # Direct projection pathways to hidden_g (simplified fusion)
+        self.fc_patch = nn.Linear(patch_size * patch_size * in_channels, hidden_g)
+        self.fc_loc = nn.Linear(2, hidden_g)
 
     def forward(self, patches: torch.Tensor, locations: torch.Tensor) -> torch.Tensor:
         # Flatten patch
         x = torch.flatten(patches, 1)
-        
+
         h_g = F.relu(self.fc_patch(x))
         h_l = F.relu(self.fc_loc(locations))
-        
-        g_t = F.relu(self.fc_g_out(h_g) + self.fc_l_out(h_l))
+
+        g_t = F.relu(h_g + h_l)
         return g_t
 
 
-class LocationNetworkClassic(nn.Module):
+class LocationNetworkV2(nn.Module):
     def __init__(self, hidden_h: int, std: float = 0.1):
         super().__init__()
         self.fc  = nn.Linear(hidden_h, 2)
@@ -66,16 +58,13 @@ class LocationNetworkClassic(nn.Module):
         if self.training:
             loc, log_pi = sample_rejection_gaussian(mu, self.std, low=-1.0, high=1.0)
         else:
-            # Deterministic mean (original):
-            # loc    = torch.clamp(mu, -1.0, 1.0)
-            # log_pi = torch.zeros(mu.size(0), device=mu.device)
             # Sample at inference:
             loc, log_pi = sample_rejection_gaussian(mu, self.std, low=-1.0, high=1.0)
 
         return loc.detach(), log_pi
 
 
-class BaselineNetworkClassic(nn.Module):
+class BaselineNetworkV2(nn.Module):
     def __init__(self, hidden_h: int):
         super().__init__()
         self.fc = nn.Linear(hidden_h, 1)
@@ -86,7 +75,7 @@ class BaselineNetworkClassic(nn.Module):
         return self.fc(h_t).squeeze(-1)
 
 
-class ActionNetworkClassic(nn.Module):
+class ActionNetworkV2(nn.Module):
     def __init__(self, hidden_h: int):
         super().__init__()
         self.fc = nn.Linear(hidden_h, 1)
@@ -95,7 +84,7 @@ class ActionNetworkClassic(nn.Module):
         return self.fc(h_t)
 
 
-class RecurrentAttentionModelClassic(nn.Module):
+class RecurrentAttentionModelV2(nn.Module):
     def __init__(
         self,
         patch_size:   int = 8,
@@ -112,18 +101,13 @@ class RecurrentAttentionModelClassic(nn.Module):
         if hidden_dim is not None:
             hidden_g = hidden_dim
             hidden_h = hidden_dim
-            hidden_patch = max(2, hidden_dim // 2) if hidden_patch is None else hidden_patch
-            hidden_loc = max(2, hidden_dim // 2) if hidden_loc is None else hidden_loc
-        else:
-            hidden_patch = 128 if hidden_patch is None else hidden_patch
-            hidden_loc = 128 if hidden_loc is None else hidden_loc
 
-        self.glimpse_net  = GlimpseNetworkClassic(patch_size, in_channels, hidden_patch, hidden_loc, hidden_g)
+        self.glimpse_net  = GlimpseNetworkV2(patch_size, in_channels, hidden_g=hidden_g)
         self.core_rnn     = nn.RNNCell(hidden_g, hidden_h, nonlinearity='relu')
             
-        self.location_net = LocationNetworkClassic(hidden_h, std)
-        self.baseline_net = BaselineNetworkClassic(hidden_h)
-        self.action_net   = ActionNetworkClassic(hidden_h)
+        self.location_net = LocationNetworkV2(hidden_h, std)
+        self.baseline_net = BaselineNetworkV2(hidden_h)
+        self.action_net   = ActionNetworkV2(hidden_h)
 
         self.hidden_h = hidden_h
         self.sensor_noise = float(sensor_noise)

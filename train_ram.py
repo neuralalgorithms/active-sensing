@@ -23,7 +23,8 @@ else:
 torch.set_num_threads(cpus_per_task)
 print(f">>> TORCH THREADS: {torch.get_num_threads()} | WORKERS: {num_workers}")
 
-MODEL_CLASS = models.RecurrentAttentionModelClassic
+#MODEL_CLASS = models.RecurrentAttentionModelClassic
+MODEL_CLASS = models.RecurrentAttentionModelV2
 
 # -- EXPERIMENT CONFIG ---
 NUM_EPOCHS: int=200
@@ -34,7 +35,18 @@ EPOCH_COUNTER: int=25
 
 # --- TRAIN ---
 
-def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random_baseline: bool = False, hidden_dim: int = 256) -> tuple:
+def train(
+    num_glimpses: int,
+    patch_size: int,
+    std: float,
+    loaders: tuple,
+    random_baseline: bool = False,
+    hidden_dim: int = 256,
+    sensor_noise: float = 0.0,
+    lr: float = LEARNING_RATE,
+    epochs: int = NUM_EPOCHS,
+    lr_schedule: str = "constant",
+) -> tuple:
     """
     Executes training loop with REINFORCE and dynamic masking.
     Returns:
@@ -44,11 +56,26 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
     """
     train_loader, val_loader = loaders
 
-    model = MODEL_CLASS(patch_size=patch_size, hidden_dim=hidden_dim, std=std).to(DEVICE)
+    model = MODEL_CLASS(patch_size=patch_size, hidden_dim=hidden_dim, std=std, sensor_noise=sensor_noise).to(DEVICE)
 
     # In more complex implementations, we might use a separate optimizer/LR for the baseline net.
     # For simplicity, we use one optimizer for all parameters.
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    if lr_schedule == "step_decay":
+        milestone_1 = int(round(epochs * 0.65))
+        milestone_2 = int(round(epochs * 0.85))
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer,
+            milestones=[milestone_1, milestone_2],
+            gamma=0.2,
+        )
+        print(f">>> LR SCHEDULE: step_decay (initial={lr}, milestones={[milestone_1, milestone_2]}, gamma=0.2)")
+    elif lr_schedule == "constant":
+        scheduler = None
+        print(f">>> LR SCHEDULE: constant (lr={lr})")
+    else:
+        raise ValueError(f"Unknown lr_schedule: {lr_schedule}. Expected 'constant' or 'step_decay'.")
 
     criterion = torch.nn.BCEWithLogitsLoss()
     mse_criterion = torch.nn.MSELoss(reduction='none')
@@ -63,7 +90,8 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
         "val_acc": [],
         "train_loss": [],
         "val_loss": [],
-        "val_f1": []
+        "val_f1": [],
+        "lr": [],
     }
     best_val_acc: float = -1.0
     best_state_dict = copy.deepcopy(model.state_dict())
@@ -76,7 +104,7 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
 
     # tqdm logging
     format_str = "{desc}: {percentage:3.0f}% |{bar:25}| {n_fmt}/{total_fmt} [Elapsed: {elapsed} | Remaining: {remaining}] {postfix}"
-    pbar = tqdm(range(NUM_EPOCHS), desc="Training", bar_format=format_str, unit="epoch", ncols=150, mininterval=5.0)
+    pbar = tqdm(range(epochs), desc="Training", bar_format=format_str, unit="epoch", ncols=150, mininterval=5.0)
 
     for epoch in pbar:
         # --- TRAINING PHASE ---
@@ -176,6 +204,7 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
         epoch_val_loss = running_val_loss / len(val_loader)
         epoch_val_acc = 100.0 * (val_correct / val_total)
         epoch_f1 = float(f1_score(all_targets, all_preds))
+        current_lr = optimizer.param_groups[0]["lr"]
 
         # Update history
         history["train_acc"].append(epoch_train_acc)
@@ -183,6 +212,7 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
         history["train_loss"].append(epoch_train_loss)
         history["val_loss"].append(epoch_val_loss)
         history["val_f1"].append(epoch_f1)
+        history["lr"].append(current_lr)
 
         # Track interval and best accuracy
         interval_val_accs.append(epoch_val_acc)
@@ -193,13 +223,18 @@ def train(num_glimpses: int, patch_size: int, std: float, loaders: tuple, random
             best_val_acc = epoch_val_acc
             best_state_dict = copy.deepcopy(model.state_dict())
 
+        # Step LR scheduler after completing the epoch
+        if scheduler is not None:
+            scheduler.step()
+
         # --- LOGGING ---
         pbar.set_postfix({
             "T_Loss": f"{epoch_train_loss:.3f}",
             "V_Loss": f"{epoch_val_loss:.3f}",
             "T_Acc": f"{epoch_train_acc:.1f}%",
             "V_Acc": f"{epoch_val_acc:.1f}%",
-            "V_F1": f"{epoch_f1:.3f}"
+            "V_F1": f"{epoch_f1:.3f}",
+            "LR": f"{current_lr:.1e}",
         })
 
         if (epoch + 1) % EPOCH_COUNTER == 0:
@@ -232,11 +267,21 @@ if __name__ == "__main__":
     parser.add_argument("--data_dir", type=str, help="Directory containing the datasets")
     parser.add_argument("--output_dir", type=str, help="Directory to save CSV results")
     parser.add_argument("--std", type=float, default=0.1, help="Standard deviation for location policy")
+    parser.add_argument("--sensor_noise", type=float, default=0.0, help="Standard deviation of independent Gaussian sensor noise added to glimpses")
     parser.add_argument("--baseline_lr", type=float, default=0.001, help="Learning rate for baseline network (not currently used separately)")
     parser.add_argument("--hidden_dim", type=int, default=256, help="Hidden dimension for model capacity scaling")
     parser.add_argument("--model_type", type=str, choices=["policy", "random"], default=None, help="Model architecture ('policy' or 'random')")
     parser.add_argument("--random_baseline", action="store_true", help="Use uniform random glimpse locations instead of the learned policy")
     parser.add_argument("--results_file", type=str, default=None, help="Name of the results CSV file (defaults to results.csv if output_dir provided, or results_ram_...)")
+    parser.add_argument("--epochs", type=int, default=NUM_EPOCHS, help=f"Total number of training epochs (default: {NUM_EPOCHS})")
+    parser.add_argument("--lr", type=float, default=LEARNING_RATE, help=f"Initial learning rate (default: {LEARNING_RATE})")
+    parser.add_argument(
+        "--lr_schedule",
+        type=str,
+        choices=["constant", "step_decay"],
+        default="constant",
+        help="Learning rate schedule: 'constant' or 'step_decay' (decay by 0.2x at 65 and 85 percent of epochs; default: 'constant')",
+    )
     args = parser.parse_args()
 
     # Determine model type and random_baseline
@@ -279,7 +324,18 @@ if __name__ == "__main__":
                 # Unlike train.py, we don't wrap val_loader in StaticMaskedDataset
                 # because the model determines its own sequence of glimpses dynamically.
 
-                model, best_val_acc, history = train(n, patch_size, args.std, (train_loader, val_loader), random_baseline=random_baseline, hidden_dim=args.hidden_dim)
+                model, best_val_acc, history = train(
+                    n,
+                    patch_size,
+                    args.std,
+                    (train_loader, val_loader),
+                    random_baseline=random_baseline,
+                    hidden_dim=args.hidden_dim,
+                    sensor_noise=args.sensor_noise,
+                    lr=args.lr,
+                    epochs=args.epochs,
+                    lr_schedule=args.lr_schedule,
+                )
 
                 # Save trained weights in safetensors format
                 weight_metadata = {
@@ -290,7 +346,10 @@ if __name__ == "__main__":
                     "num_glimpses": str(n),
                     "seed": str(seed),
                     "std": str(args.std),
-                    "num_epochs": str(NUM_EPOCHS),
+                    "sensor_noise": str(args.sensor_noise),
+                    "num_epochs": str(args.epochs),
+                    "learning_rate": str(args.lr),
+                    "lr_schedule": str(args.lr_schedule),
                     "best_val_accuracy": f"{best_val_acc:.2f}",
                     "format": "pytorch",
                 }
@@ -306,6 +365,7 @@ if __name__ == "__main__":
                     "glimpses": n,
                     "seed": seed,
                     "hidden_dim": args.hidden_dim,
+                    "sensor_noise": args.sensor_noise,
                     "model_type": model_tag,
                     "epoch": i + 1,
                     "val_accuracy": history['val_acc'][i],
@@ -313,6 +373,7 @@ if __name__ == "__main__":
                     "val_loss": history['val_loss'][i],
                     "train_loss": history['train_loss'][i],
                     "val_f1": history['val_f1'][i],
+                    "learning_rate": history['lr'][i],
                     "best_val_accuracy": best_val_acc
                 } for i in range(len(history['val_acc']))]
 
