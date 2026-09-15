@@ -16,6 +16,7 @@ dependencies = [
     "torch>=2.10.0",
     "torchvision>=0.25.0",
     "tqdm>=4.67.3",
+    "slpilot>=0.1.0",
 ]
 
 [tool.uv.sources]
